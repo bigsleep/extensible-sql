@@ -1,26 +1,28 @@
-{-# LANGUAGE DataKinds, FlexibleContexts, TypeOperators #-}
+{-# LANGUAGE DataKinds, FlexibleContexts, TypeOperators, RankNTypes #-}
 module Main where
 
 import Data.Extensible (Member, Match(..), (:*), (<:), nil)
 import ExSql.Syntax.Arithmetic
+import ExSql.Syntax.Comparison
 import ExSql.Syntax.Literal
 import ExSql.Syntax.Class
 import ExSql.Printer.Default
 
-e1 :: (Member xs Arithmetic, Member xs Literal) => Expr xs Int
-e1 = addition (multiplication (int 1) (negation (int 2))) (division (int 3) (int 4))
+e1 :: (Member xs Comparison, Member xs Arithmetic, Member xs Literal) => Expr xs Bool
+e1 = equality (addition (multiplication (int 1) (negation (int 2))) (division (int 3) (int 4))) (multiplication (int 5) (int 2))
 
-type Nodes = '[Arithmetic, Literal]
+type Nodes = '[Comparison, Arithmetic, Literal]
 type E = Expr Nodes
-type Printers xs a = Match (Node (Expr xs) a) String :* xs
+type Printers xs a = Printer (Expr xs) :* xs
 
-printers :: (Expr Nodes a -> String) -> Printers Nodes a
+printers :: (forall b. Expr Nodes b -> String) -> Printers Nodes a
 printers p
-    = Match (prettyArithmetic p . unNode)
-    <: Match (prettyLiteral . unNode)
+    =  Printer (prettyComparison p)
+    <: Printer (prettyArithmetic p)
+    <: Printer (prettyLiteral)
     <: nil
 
-pp :: Expr Nodes Int -> String
+pp :: Expr Nodes a -> String
 pp = pretty (printers pp)
 
 main :: IO ()

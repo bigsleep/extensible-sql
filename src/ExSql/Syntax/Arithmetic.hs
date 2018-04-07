@@ -1,4 +1,4 @@
-{-# LANGUAGE DataKinds, GADTs, RankNTypes, FlexibleContexts #-}
+{-# LANGUAGE GADTs, RankNTypes, FlexibleContexts #-}
 module ExSql.Syntax.Arithmetic
     ( Arithmetic(..)
     , negation

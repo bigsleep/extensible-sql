@@ -1,4 +1,4 @@
-{-# LANGUAGE DataKinds, KindSignatures, GADTs, RankNTypes, FlexibleContexts #-}
+{-# LANGUAGE KindSignatures, GADTs, RankNTypes, FlexibleContexts #-}
 module ExSql.Syntax.Literal
     ( Literal(..)
     , int
