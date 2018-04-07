@@ -6,7 +6,6 @@ module ExSql.Syntax.Logical
     , disjunction
     ) where
 
-import Data.Proxy (Proxy(..))
 import ExSql.Syntax.Class
 
 data Logical g a where
@@ -14,18 +13,15 @@ data Logical g a where
     Conjunction :: g Bool -> g Bool -> Logical g Bool
     Disjunction :: g Bool -> g Bool -> Logical g Bool
 
-type Uop g = UnaryOpType "Logical" Logical g Bool
+type Uop g = UnaryOpType Logical g Bool Bool
 
-type Bop g = BinaryOpType "Logical" Logical g Bool
-
-proxy :: Proxy "Logical"
-proxy = Proxy
+type Bop g = BinaryOpType Logical g Bool Bool
 
 logicalNegation :: Uop g
-logicalNegation = unaryOp proxy LogicalNegation
+logicalNegation = unaryOp LogicalNegation
 
 conjunction :: Bop g
-conjunction = binaryOp proxy Conjunction
+conjunction = binaryOp Conjunction
 
 disjunction :: Bop g
-disjunction = binaryOp proxy Disjunction
+disjunction = binaryOp Disjunction

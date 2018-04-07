@@ -8,7 +8,6 @@ module ExSql.Syntax.Arithmetic
     , division
     ) where
 
-import Data.Proxy (Proxy(..))
 import ExSql.Syntax.Class
 
 data Arithmetic g a where
@@ -18,24 +17,21 @@ data Arithmetic g a where
     Multiplication :: g a -> g a -> Arithmetic g a
     Division :: g a -> g a -> Arithmetic g a
 
-type Uop g a = UnaryOpType "Arithmetic" Arithmetic g a
+type Uop g a = UnaryOpType Arithmetic g a a
 
-type Bop g a = BinaryOpType "Arithmetic" Arithmetic g a
-
-proxy :: Proxy "Arithmetic"
-proxy = Proxy
+type Bop g a = BinaryOpType Arithmetic g a a
 
 negation :: Uop g a
-negation = unaryOp proxy Negation
+negation = unaryOp Negation
 
 addition :: Bop g a
-addition = binaryOp proxy Addition
+addition = binaryOp Addition
 
 subtraction :: Bop g a
-subtraction = binaryOp proxy Subtraction
+subtraction = binaryOp Subtraction
 
 multiplication :: Bop g a
-multiplication = binaryOp proxy Multiplication
+multiplication = binaryOp Multiplication
 
 division :: Bop g a
-division = binaryOp proxy Division
+division = binaryOp Division

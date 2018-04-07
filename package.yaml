@@ -22,6 +22,7 @@ description:         Please see the README on Github at <https://github.com/gith
 dependencies:
 - base >= 4.8 && < 5
 - extensible
+- text
 
 library:
   source-dirs: src
@@ -35,3 +36,4 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
+    - extensible-sql
