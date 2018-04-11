@@ -20,13 +20,13 @@ class Ast g where
 class Hoist (t :: (* -> *) -> * -> *) where
     hoist :: (forall x. f x -> g x) -> t f a -> t g a
 
-newtype Node g a (f :: (* -> *) -> * -> *) = Node { unNode :: f g a }
+newtype Node m g a (f :: (* -> *) -> * -> *) = Node { unNode :: m (f g a) }
 
-newtype Expr xs a = Expr { unExpr :: Node (Expr xs) a :| xs }
+newtype Expr m xs a = Expr { unExpr :: Node m (Expr m xs) a :| xs }
 
-instance Ast (Expr xs) where
-    type NodeTypes (Expr xs) = xs
-    mkAst = Expr . embed . Node
+instance (Monad m) => Ast (Expr m xs) where
+    type NodeTypes (Expr m xs) = xs
+    mkAst = Expr . embed . Node . return
 
 type UnaryOpType v g a b = (Ast g, Member (NodeTypes g) v) => g a -> g b
 
