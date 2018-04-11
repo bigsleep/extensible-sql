@@ -16,10 +16,10 @@ instance Hoist Literal where
     hoist _ (LitInt a) = LitInt a
     hoist _ (LitBool a) = LitBool a
 
-type Constructor g a = (Ast g, Member (NodeTypes g) Literal) => a -> g a
+type Constructor g m a = (Ast g, Monad m, Member (NodeTypes g) Literal) => a -> g m a
 
-int :: Constructor g Int
-int = mkAst . LitInt
+int :: Constructor g m Int
+int = mkAst . return . LitInt
 
-bool :: Constructor g Bool
-bool = mkAst . LitBool
+bool :: Constructor g m Bool
+bool = mkAst . return . LitBool

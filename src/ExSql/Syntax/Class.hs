@@ -15,7 +15,7 @@ import GHC.TypeLits (Symbol)
 
 class Ast g where
     type NodeTypes g :: [(* -> *) -> * -> *]
-    mkAst :: (Hoist v, Member (NodeTypes g) v) => v g a -> g a
+    mkAst :: (Monad m, Hoist v, Member (NodeTypes g) v) => m (v (g m) a) -> g m a
 
 class Hoist (t :: (* -> *) -> * -> *) where
     hoist :: (forall x. f x -> g x) -> t f a -> t g a
@@ -23,21 +23,21 @@ class Hoist (t :: (* -> *) -> * -> *) where
 data Node m g a (f :: (* -> *) -> * -> *) where
     Node :: (Hoist f) => m (f g a) -> Node m g a f
 
-newtype Expr m xs a = Expr { unExpr :: Node m (Expr m xs) a :| xs }
+newtype Expr xs m a = Expr { unExpr :: Node m (Expr xs m) a :| xs }
 
-instance (Monad m) => Ast (Expr m xs) where
-    type NodeTypes (Expr m xs) = xs
-    mkAst = Expr . embed . Node . return
+instance Ast (Expr xs) where
+    type NodeTypes (Expr xs) = xs
+    mkAst = Expr . embed . Node
 
-hoistExpr :: (Monad n) => (forall x. m x -> n x) -> Expr m xs a -> Expr n xs a
+hoistExpr :: (Monad n) => (forall x. m x -> n x) -> Expr xs m a -> Expr xs n a
 hoistExpr f (Expr (EmbedAt p (Node m))) = Expr (EmbedAt p (Node (hoist (hoistExpr f) <$> f m)))
 
-type UnaryOpType v g a b = (Ast g, Hoist v, Member (NodeTypes g) v) => g a -> g b
+type UnaryOpType v g m a b = (Ast g, Hoist v, Monad m, Member (NodeTypes g) v) => g m a -> g m b
 
-type BinaryOpType v g a b = (Ast g, Hoist v, Member (NodeTypes g) v) => g a -> g a -> g b
+type BinaryOpType v g m a b = (Ast g, Hoist v, Monad m, Member (NodeTypes g) v) => g m a -> g m a -> g m b
 
-unaryOp :: (Ast g, Hoist v, Member (NodeTypes g) v) => (g a -> v g b) -> g a -> g b
-unaryOp op = mkAst . op
+unaryOp :: (Ast g, Hoist v, Monad m, Member (NodeTypes g) v) => (g m a -> v (g m) b) -> g m a -> g m b
+unaryOp op = mkAst . return . op
 
-binaryOp :: (Ast g, Hoist v, Member (NodeTypes g) v) => (g a -> g a -> v g b) -> g a -> g a -> g b
-binaryOp op a0 a1 = mkAst $ a0 `op` a1
+binaryOp :: (Ast g, Hoist v, Monad m, Member (NodeTypes g) v) => (g m a -> g m a -> v (g m) b) -> g m a -> g m a -> g m b
+binaryOp op a0 a1 = mkAst . return $ a0 `op` a1

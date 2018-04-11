@@ -21,14 +21,14 @@ import ExSql.Syntax.Logical
 
 newtype Printer (g :: * -> *) (v :: (* -> *) -> * -> *) = Printer { runPrinter :: forall a. Maybe Relativity -> Maybe Relativity -> v g a -> Text }
 
-pretty :: Printer (Expr Identity xs) :* xs -> Maybe Relativity -> Maybe Relativity -> Expr Identity xs a -> Text
+pretty :: Printer (Expr xs Identity) :* xs -> Maybe Relativity -> Maybe Relativity -> Expr xs Identity a -> Text
 pretty printers l r (Expr (EmbedAt membership (Node (Identity a)))) = runPrinter (hindex printers membership) l r a
 
 prettyLiteral :: Maybe Relativity -> Maybe Relativity -> Literal g a -> Text
 prettyLiteral _ _ (LitInt a) = Text.pack . show $ a
 prettyLiteral _ _ (LitBool a) = Text.pack . show $ a
 
-prettyComparison :: (forall b. Maybe Relativity -> Maybe Relativity -> Expr Identity xs b -> Text) -> Maybe Relativity -> Maybe Relativity -> Comparison (Expr Identity xs) a -> Text
+prettyComparison :: (forall b. Maybe Relativity -> Maybe Relativity -> Expr xs Identity b -> Text) -> Maybe Relativity -> Maybe Relativity -> Comparison (Expr xs Identity) a -> Text
 prettyComparison p l r (Equality a0 a1) =
     let c = Relativity (Precedence 11) NonAssociative
     in handleBracket l c r $ p l (Just c) a0 `mappend` "==" `mappend` p (Just c) r a1
@@ -45,7 +45,7 @@ prettyComparison p l r (LessThanOrEqual a0 a1) =
     let c = Relativity (Precedence 11) NonAssociative
     in handleBracket l c r $ p l (Just c) a0 `mappend` "<=" `mappend` p (Just c) r a1
 
-prettyArithmetic :: (forall b. Maybe Relativity -> Maybe Relativity -> Expr Identity xs b -> Text) -> Maybe Relativity -> Maybe Relativity -> Arithmetic (Expr Identity xs) a -> Text
+prettyArithmetic :: (forall b. Maybe Relativity -> Maybe Relativity -> Expr xs Identity b -> Text) -> Maybe Relativity -> Maybe Relativity -> Arithmetic (Expr xs Identity) a -> Text
 prettyArithmetic p l r (Negation a) =
     let c = Relativity (Precedence 4) RightToLeft
     in handleBracket l c r $ "-" `mappend` p (Just c) r a
@@ -62,7 +62,7 @@ prettyArithmetic p l r (Division a0 a1) =
     let c = Relativity (Precedence 6) LeftToRight
     in handleBracket l c r $ p l (Just c) a0 `mappend` "/" `mappend` p (Just c) r a1
 
-prettyLogical :: (forall b. Maybe Relativity -> Maybe Relativity -> Expr Identity xs b -> Text) -> Maybe Relativity -> Maybe Relativity -> Logical (Expr Identity xs) a -> Text
+prettyLogical :: (forall b. Maybe Relativity -> Maybe Relativity -> Expr xs Identity b -> Text) -> Maybe Relativity -> Maybe Relativity -> Logical (Expr xs Identity) a -> Text
 prettyLogical p l r (LogicalNegation a) =
     let c = Relativity (Precedence 13) RightToLeft
     in handleBracket l c r $ "NOT " `mappend` p (Just c) r a

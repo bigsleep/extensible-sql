@@ -24,20 +24,19 @@ instance Hoist Comparison where
     hoist f (GreaterThanOrEqual a0 a1) = GreaterThanOrEqual (f a0) (f a1)
     hoist f (LessThanOrEqual a0 a1) = LessThanOrEqual (f a0) (f a1)
 
-type Bop g a = BinaryOpType Comparison g a Bool
+type Bop g m a = BinaryOpType Comparison g m a Bool
 
-equality :: Bop g a
+equality :: Bop g m a
 equality = binaryOp Equality
 
-greaterThan :: Bop g a
+greaterThan :: Bop g m a
 greaterThan = binaryOp GreaterThan
 
-lessThan :: Bop g a
+lessThan :: Bop g m a
 lessThan = binaryOp LessThan
 
-greaterThanOrEqual :: Bop g a
+greaterThanOrEqual :: Bop g m a
 greaterThanOrEqual = binaryOp GreaterThanOrEqual
 
-lessThanOrEqual :: Bop g a
+lessThanOrEqual :: Bop g m a
 lessThanOrEqual = binaryOp GreaterThanOrEqual
-

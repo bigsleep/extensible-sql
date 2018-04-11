@@ -18,15 +18,15 @@ instance Hoist Logical where
     hoist f (Conjunction a0 a1) = Conjunction (f a0) (f a1)
     hoist f (Disjunction a0 a1) = Disjunction (f a0) (f a1)
 
-type Uop g = UnaryOpType Logical g Bool Bool
+type Uop g m = UnaryOpType Logical g m Bool Bool
 
-type Bop g = BinaryOpType Logical g Bool Bool
+type Bop g m = BinaryOpType Logical g m Bool Bool
 
-logicalNegation :: Uop g
+logicalNegation :: Uop g m
 logicalNegation = unaryOp LogicalNegation
 
-conjunction :: Bop g
+conjunction :: Bop g m
 conjunction = binaryOp Conjunction
 
-disjunction :: Bop g
+disjunction :: Bop g m
 disjunction = binaryOp Disjunction
