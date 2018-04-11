@@ -12,6 +12,10 @@ data Literal (g :: * -> *) a where
     LitInt :: Int -> Literal g Int
     LitBool :: Bool -> Literal g Bool
 
+instance Hoist Literal where
+    hoist _ (LitInt a) = LitInt a
+    hoist _ (LitBool a) = LitBool a
+
 type Constructor g a = (Ast g, Member (NodeTypes g) Literal) => a -> g a
 
 int :: Constructor g Int

@@ -13,6 +13,11 @@ data Logical g a where
     Conjunction :: g Bool -> g Bool -> Logical g Bool
     Disjunction :: g Bool -> g Bool -> Logical g Bool
 
+instance Hoist Logical where
+    hoist f (LogicalNegation a) = LogicalNegation (f a)
+    hoist f (Conjunction a0 a1) = Conjunction (f a0) (f a1)
+    hoist f (Disjunction a0 a1) = Disjunction (f a0) (f a1)
+
 type Uop g = UnaryOpType Logical g Bool Bool
 
 type Bop g = BinaryOpType Logical g Bool Bool

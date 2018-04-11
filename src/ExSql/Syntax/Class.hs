@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds, ConstraintKinds, TypeFamilies, RankNTypes, FlexibleContexts, TypeOperators #-}
 module ExSql.Syntax.Class
     ( Ast(..)
+    , Hoist(..)
     , Node(..)
     , Expr(..)
     , UnaryOpType
@@ -15,6 +16,9 @@ import GHC.TypeLits (Symbol)
 class Ast g where
     type NodeTypes g :: [(* -> *) -> * -> *]
     mkAst :: (Member (NodeTypes g) v) => v g a -> g a
+
+class Hoist (t :: (* -> *) -> * -> *) where
+    hoist :: (forall x. f x -> g x) -> t f a -> t g a
 
 newtype Node g a (f :: (* -> *) -> * -> *) = Node { unNode :: f g a }
 
