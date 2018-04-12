@@ -8,6 +8,7 @@ module ExSql.Syntax.Class
     , BinaryOpType
     , unaryOp
     , binaryOp
+    , hoistExpr
     ) where
 
 import Data.Extensible (Member, (:|)(..), embed)
