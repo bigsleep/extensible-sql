@@ -29,7 +29,7 @@ instance Ast (Expr xs) where
     type NodeTypes (Expr xs) = xs
     mkAst = Expr . embed . Node
 
-hoistExpr :: (Monad n) => (forall x. m x -> n x) -> Expr xs m a -> Expr xs n a
+hoistExpr :: (Functor n) => (forall x. m x -> n x) -> Expr xs m a -> Expr xs n a
 hoistExpr f (Expr (EmbedAt p (Node m))) = Expr (EmbedAt p (Node (hoist (hoistExpr f) <$> f m)))
 
 type UnaryOpType v g m a b = (Ast g, Hoist v, Monad m, Member (NodeTypes g) v) => g m a -> g m b
