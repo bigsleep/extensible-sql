@@ -7,6 +7,8 @@ import Control.Monad.Reader.Class (MonadReader(..))
 import Control.Monad.Trans.Reader (ReaderT, runReaderT)
 import Data.Extensible (Member, Match(..), (:|)(..), (:*), (<:), nil, hindex)
 import Data.Functor.Identity (Identity(..))
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import ExSql.Syntax.Arithmetic
 import ExSql.Syntax.Literal
 import ExSql.Syntax.Class
@@ -43,11 +45,21 @@ pp = runPrinters (printers pp)
 refInt :: (Ast g, MonadReader Int m, Member (NodeTypes g) Literal) => g m Int
 refInt = mkAst (ask >>= return . LitInt)
 
+refMap :: (Ast g, MonadReader (Map String Int) m, Member (NodeTypes g) Literal) => String -> g m Int
+refMap name = mkAst (ask >>= return . LitInt . Map.findWithDefault 0 name)
+
 e1 :: (Ast g, MonadReader Int m,  Member (NodeTypes g) Arithmetic, Member (NodeTypes g) Literal) => g m Int
 e1 = addition refInt refInt
+
+e2 :: (Ast g, MonadReader (Map String Int) m,  Member (NodeTypes g) Arithmetic, Member (NodeTypes g) Literal) => g m Int
+e2 = addition (refMap "a") (refMap "b")
 
 spec :: Spec
 spec = do
     describe "hoistExpr" $ do
         it "can use with MonadReader" $ do
             pp (hoistExpr (flip runReaderT 1) e1) `shouldBe` "(1+1)"
+
+        it "with Map" $ do
+            let m = Map.fromList [("a", 123), ("b", 456)]
+            pp (hoistExpr (flip runReaderT m) e2) `shouldBe` "(123+456)"

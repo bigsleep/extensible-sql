@@ -48,6 +48,7 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - extensible-sql
+    - containers
     - mtl
     - transformers
     - hspec == 2.*
