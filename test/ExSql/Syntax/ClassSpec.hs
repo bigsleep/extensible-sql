@@ -48,10 +48,10 @@ refInt = mkAst (ask >>= return . LitInt)
 refMap :: (Ast g, MonadReader (Map String Int) m, Member (NodeTypes g) Literal) => String -> g m Int
 refMap name = mkAst (ask >>= return . LitInt . Map.findWithDefault 0 name)
 
-e1 :: (Ast g, MonadReader Int m,  Member (NodeTypes g) Arithmetic, Member (NodeTypes g) Literal) => g m Int
+e1 :: (Ast g, MonadReader Int m, Member (NodeTypes g) Arithmetic, Member (NodeTypes g) Literal) => g m Int
 e1 = addition refInt refInt
 
-e2 :: (Ast g, MonadReader (Map String Int) m,  Member (NodeTypes g) Arithmetic, Member (NodeTypes g) Literal) => g m Int
+e2 :: (Ast g, MonadReader (Map String Int) m, Member (NodeTypes g) Arithmetic, Member (NodeTypes g) Literal) => g m Int
 e2 = addition (refMap "a") (refMap "b")
 
 spec :: Spec

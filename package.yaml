@@ -22,7 +22,10 @@ description:         Please see the README on Github at <https://github.com/gith
 dependencies:
 - base >= 4.8 && < 5
 - extensible
+- mtl
+- persistent
 - text
+- transformers
 
 library:
   source-dirs: src
@@ -49,6 +52,5 @@ tests:
     dependencies:
     - extensible-sql
     - containers
-    - mtl
-    - transformers
+    - persistent-template
     - hspec == 2.*
