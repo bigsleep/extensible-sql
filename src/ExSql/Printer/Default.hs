@@ -8,10 +8,16 @@ module ExSql.Printer.Default
     , prettyLogical
     ) where
 
+import Data.DList (DList)
+import qualified Data.DList as DList
 import Data.Extensible ((:*), (:|)(..), hindex)
 import Data.Functor.Identity (Identity(..))
+import Data.Int (Int64)
 import Data.Text (Text)
 import qualified Data.Text as Text (pack)
+
+import Database.Persist (PersistValue(..))
+
 import ExSql.Syntax.Class (Expr(..), Node(..))
 import ExSql.Syntax.Relativity (Relativity(..), Precedence(..), Associativity(..))
 import ExSql.Syntax.Literal
@@ -19,59 +25,67 @@ import ExSql.Syntax.Arithmetic
 import ExSql.Syntax.Comparison
 import ExSql.Syntax.Logical
 
-newtype Printer (g :: * -> *) (v :: (* -> *) -> * -> *) = Printer { runPrinter :: forall a. Maybe Relativity -> Maybe Relativity -> v g a -> Text }
+newtype Printer (g :: * -> *) (v :: (* -> *) -> * -> *) = Printer { runPrinter :: forall a. Maybe Relativity -> Maybe Relativity -> v g a -> (Text, DList PersistValue) }
 
-pretty :: Printer (Expr xs Identity) :* xs -> Maybe Relativity -> Maybe Relativity -> Expr xs Identity a -> Text
+pretty :: Printer (Expr xs Identity) :* xs -> Maybe Relativity -> Maybe Relativity -> Expr xs Identity a -> (Text, DList PersistValue)
 pretty printers l r (Expr (EmbedAt membership (Node (Identity a)))) = runPrinter (hindex printers membership) l r a
 
-prettyLiteral :: Maybe Relativity -> Maybe Relativity -> Literal g a -> Text
-prettyLiteral _ _ (LitInt a) = Text.pack . show $ a
-prettyLiteral _ _ (LitBool a) = Text.pack . show $ a
+prettyBinOp :: (forall x. Maybe Relativity -> Maybe Relativity -> Expr xs Identity x -> (Text, DList PersistValue)) -> Maybe Relativity -> Relativity -> Maybe Relativity -> Text -> Expr xs Identity a -> Expr xs Identity b -> (Text, DList PersistValue)
+prettyBinOp p l c r op a b =
+    let (lt, lps) = p l (Just c) a
+        (rt, rps) = p (Just c) r b
+    in (handleBracket l c r $ lt `mappend` op `mappend` rt, lps `mappend` rps)
 
-prettyComparison :: (forall b. Maybe Relativity -> Maybe Relativity -> Expr xs Identity b -> Text) -> Maybe Relativity -> Maybe Relativity -> Comparison (Expr xs Identity) a -> Text
+prettyLiteral :: Maybe Relativity -> Maybe Relativity -> Literal g a -> (Text, DList PersistValue)
+prettyLiteral _ _ (LitInt a) = ("?", return $ PersistInt64 a)
+prettyLiteral _ _ (LitBool a) = ("?", return $ PersistBool a)
+
+prettyComparison :: (forall b. Maybe Relativity -> Maybe Relativity -> Expr xs Identity b -> (Text, DList PersistValue)) -> Maybe Relativity -> Maybe Relativity -> Comparison (Expr xs Identity) a -> (Text, DList PersistValue)
 prettyComparison p l r (Equality a0 a1) =
     let c = Relativity (Precedence 11) NonAssociative
-    in handleBracket l c r $ p l (Just c) a0 `mappend` "==" `mappend` p (Just c) r a1
+    in prettyBinOp p l c r "==" a0 a1
 prettyComparison p l r (GreaterThan a0 a1) =
     let c = Relativity (Precedence 11) NonAssociative
-    in handleBracket l c r $ p l (Just c) a0 `mappend` ">" `mappend` p (Just c) r a1
+    in prettyBinOp p l c r ">" a0 a1
 prettyComparison p l r (LessThan a0 a1) =
     let c = Relativity (Precedence 11) NonAssociative
-    in handleBracket l c r $ p l (Just c) a0 `mappend` "<" `mappend` p (Just c) r a1
+    in prettyBinOp p l c r "<" a0 a1
 prettyComparison p l r (GreaterThanOrEqual a0 a1) =
     let c = Relativity (Precedence 11) NonAssociative
-    in handleBracket l c r $ p l (Just c) a0 `mappend` ">=" `mappend` p (Just c) r a1
+    in prettyBinOp p l c r ">=" a0 a1
 prettyComparison p l r (LessThanOrEqual a0 a1) =
     let c = Relativity (Precedence 11) NonAssociative
-    in handleBracket l c r $ p l (Just c) a0 `mappend` "<=" `mappend` p (Just c) r a1
+    in prettyBinOp p l c r "<=" a0 a1
 
-prettyArithmetic :: (forall b. Maybe Relativity -> Maybe Relativity -> Expr xs Identity b -> Text) -> Maybe Relativity -> Maybe Relativity -> Arithmetic (Expr xs Identity) a -> Text
+prettyArithmetic :: (forall b. Maybe Relativity -> Maybe Relativity -> Expr xs Identity b -> (Text, DList PersistValue)) -> Maybe Relativity -> Maybe Relativity -> Arithmetic (Expr xs Identity) a -> (Text, DList PersistValue)
 prettyArithmetic p l r (Negation a) =
     let c = Relativity (Precedence 4) RightToLeft
-    in handleBracket l c r $ "-" `mappend` p (Just c) r a
+        (t, ps) = p (Just c) r a
+    in (handleBracket l c r $ "-" `mappend` t, ps)
 prettyArithmetic p l r (Addition a0 a1) =
     let c = Relativity (Precedence 7) LeftToRight
-    in handleBracket l c r $ p l (Just c) a0 `mappend` "+" `mappend` p (Just c) r a1
+    in prettyBinOp p l c r "+" a0 a1
 prettyArithmetic p l r (Subtraction a0 a1) =
     let c = Relativity (Precedence 7) LeftToRight
-    in handleBracket l c r $ p l (Just c) a0 `mappend` "-" `mappend` p (Just c) r a1
+    in prettyBinOp p l c r "-" a0 a1
 prettyArithmetic p l r (Multiplication a0 a1) =
     let c = Relativity (Precedence 6) LeftToRight
-    in handleBracket l c r $ p l (Just c) a0 `mappend` "*" `mappend` p (Just c) r a1
+    in prettyBinOp p l c r "*" a0 a1
 prettyArithmetic p l r (Division a0 a1) =
     let c = Relativity (Precedence 6) LeftToRight
-    in handleBracket l c r $ p l (Just c) a0 `mappend` "/" `mappend` p (Just c) r a1
+    in prettyBinOp p l c r "/" a0 a1
 
-prettyLogical :: (forall b. Maybe Relativity -> Maybe Relativity -> Expr xs Identity b -> Text) -> Maybe Relativity -> Maybe Relativity -> Logical (Expr xs Identity) a -> Text
+prettyLogical :: (forall b. Maybe Relativity -> Maybe Relativity -> Expr xs Identity b -> (Text, DList PersistValue)) -> Maybe Relativity -> Maybe Relativity -> Logical (Expr xs Identity) a -> (Text, DList PersistValue)
 prettyLogical p l r (LogicalNegation a) =
     let c = Relativity (Precedence 13) RightToLeft
-    in handleBracket l c r $ "NOT " `mappend` p (Just c) r a
+        (t, ps) = p (Just c) r a
+    in (handleBracket l c r $ "NOT " `mappend` t, ps)
 prettyLogical p l r (Conjunction a0 a1) =
     let c = Relativity (Precedence 14) LeftToRight
-    in handleBracket l c r $ p l (Just c) a0 `mappend` " AND " `mappend` p (Just c) r a1
+    in prettyBinOp p l c r " AND " a0 a1
 prettyLogical p l r (Disjunction a0 a1) =
     let c = Relativity (Precedence 16) LeftToRight
-    in handleBracket l c r $ p l (Just c) a0 `mappend` " OR " `mappend` p (Just c) r a1
+    in prettyBinOp p l c r " OR " a0 a1
 
 handleBracket :: Maybe Relativity -> Relativity -> Maybe Relativity -> Text -> Text
 handleBracket l c r s = if needBracket l c r

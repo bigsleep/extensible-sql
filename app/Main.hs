@@ -1,10 +1,12 @@
 {-# LANGUAGE DataKinds, FlexibleContexts, TypeOperators, RankNTypes #-}
 module Main where
 
+import Data.DList (DList)
 import Data.Text (Text)
 import qualified Data.Text as Text (unpack)
 import Data.Extensible (Member, Match(..), (:*), (<:), nil)
 import Data.Functor.Identity (Identity(..))
+import Database.Persist (PersistValue(..))
 import ExSql.Syntax.Arithmetic
 import ExSql.Syntax.Comparison
 import ExSql.Syntax.Logical
@@ -20,7 +22,7 @@ type Nodes = '[Logical, Comparison, Arithmetic, Literal]
 type E = Expr Nodes Identity
 type Printers xs a = Printer (Expr xs Identity) :* xs
 
-printers :: (forall b. Maybe Relativity -> Maybe Relativity -> Expr Nodes Identity b -> Text) -> Printers Nodes a
+printers :: (forall b. Maybe Relativity -> Maybe Relativity -> Expr Nodes Identity b -> (Text, DList PersistValue)) -> Printers Nodes a
 printers p
     =  Printer (prettyLogical p)
     <: Printer (prettyComparison p)
@@ -28,10 +30,10 @@ printers p
     <: Printer (prettyLiteral)
     <: nil
 
-pp :: Maybe Relativity -> Maybe Relativity -> Expr Nodes Identity a -> Text
+pp :: Maybe Relativity -> Maybe Relativity -> Expr Nodes Identity a -> (Text, DList PersistValue)
 pp = pretty (printers pp)
 
 main :: IO ()
 main = do
-    putStrLn . Text.unpack $ pp Nothing Nothing e1
+    print $ pp Nothing Nothing e1
     putStrLn "hello"

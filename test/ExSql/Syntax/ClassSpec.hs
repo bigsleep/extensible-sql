@@ -7,6 +7,7 @@ import Control.Monad.Reader.Class (MonadReader(..))
 import Control.Monad.Trans.Reader (ReaderT, runReaderT)
 import Data.Extensible (Member, Match(..), (:|)(..), (:*), (<:), nil, hindex)
 import Data.Functor.Identity (Identity(..))
+import Data.Int (Int64)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import ExSql.Syntax.Arithmetic
@@ -42,16 +43,16 @@ runPrinters printers (Expr (EmbedAt membership (Node (Identity a)))) = runPrinte
 pp :: Expr Nodes Identity a -> String
 pp = runPrinters (printers pp)
 
-refInt :: (Ast g, MonadReader Int m, Member (NodeTypes g) Literal) => g m Int
+refInt :: (Ast g, MonadReader Int64 m, Member (NodeTypes g) Literal) => g m Int64
 refInt = mkAst (ask >>= return . LitInt)
 
-refMap :: (Ast g, MonadReader (Map String Int) m, Member (NodeTypes g) Literal) => String -> g m Int
+refMap :: (Ast g, MonadReader (Map String Int64) m, Member (NodeTypes g) Literal) => String -> g m Int64
 refMap name = mkAst (ask >>= return . LitInt . Map.findWithDefault 0 name)
 
-e1 :: (Ast g, MonadReader Int m, Member (NodeTypes g) Arithmetic, Member (NodeTypes g) Literal) => g m Int
+e1 :: (Ast g, MonadReader Int64 m, Member (NodeTypes g) Arithmetic, Member (NodeTypes g) Literal) => g m Int64
 e1 = addition refInt refInt
 
-e2 :: (Ast g, MonadReader (Map String Int) m, Member (NodeTypes g) Arithmetic, Member (NodeTypes g) Literal) => g m Int
+e2 :: (Ast g, MonadReader (Map String Int64) m, Member (NodeTypes g) Arithmetic, Member (NodeTypes g) Literal) => g m Int64
 e2 = addition (refMap "a") (refMap "b")
 
 spec :: Spec
