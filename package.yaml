@@ -41,6 +41,7 @@ executables:
     - -with-rtsopts=-N
     dependencies:
     - extensible-sql
+    - persistent-template
 
 tests:
   extensible-sql-test:

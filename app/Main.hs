@@ -1,4 +1,4 @@
-{-# LANGUAGE DataKinds, FlexibleContexts, TypeOperators, RankNTypes #-}
+{-# LANGUAGE OverloadedStrings, DataKinds, FlexibleContexts, GADTs, GeneralizedNewtypeDeriving, KindSignatures, MultiParamTypeClasses, RankNTypes, TypeFamilies, TypeOperators, QuasiQuotes, TemplateHaskell #-}
 module Main where
 
 import Data.DList (DList)
@@ -7,13 +7,23 @@ import qualified Data.Text as Text (unpack)
 import Data.Extensible (Member, Match(..), (:*), (<:), nil)
 import Data.Functor.Identity (Identity(..))
 import Database.Persist (PersistValue(..))
+import qualified Database.Persist.TH as Persist (mkPersist, persistLowerCase, share, sqlSettings)
 import ExSql.Syntax.Arithmetic
 import ExSql.Syntax.Comparison
 import ExSql.Syntax.Logical
 import ExSql.Syntax.Literal
 import ExSql.Syntax.Class
 import ExSql.Syntax.Relativity
+import ExSql.Syntax.SelectQuery
 import ExSql.Printer.Default
+import ExSql.Printer.SelectQuery
+
+Persist.share [Persist.mkPersist Persist.sqlSettings] [Persist.persistLowerCase|
+Person
+    name String
+    age Int
+    deriving Show
+|]
 
 e1 :: (Member xs Comparison, Member xs Arithmetic, Member xs Literal, Member xs Logical, Monad m) => Expr xs m Bool
 e1 = disjunction (bool False) (conjunction (equality (addition (multiplication (int 1) (negation (int 2))) (division (int 3) (addition (int 4) (int 2)))) (multiplication (int 5) (int 2))) (bool True))
@@ -33,7 +43,13 @@ printers p
 pp :: Maybe Relativity -> Maybe Relativity -> Expr Nodes Identity a -> (Text, DList PersistValue)
 pp = pretty (printers pp)
 
+s1 :: SelectQuery E Person
+s1 = selectFrom $ \person -> where_ e1
+
 main :: IO ()
 main = do
-    print $ pp Nothing Nothing e1
+    let (c, s) = renderSelect pp s1
+        r = c [PersistText "abc", PersistInt64 20]
+    print s
+    print r
     putStrLn "hello"
