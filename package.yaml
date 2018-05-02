@@ -52,7 +52,11 @@ tests:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - extensible-sql
     - containers
-    - persistent-template
+    - extensible-sql
     - hspec == 2.*
+    - persistent-mysql
+    - persistent-postgresql
+    - persistent-template
+    - resourcet
+    - monad-logger

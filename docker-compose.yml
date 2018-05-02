@@ -1,0 +1,28 @@
+version: "2"
+services:
+  postgres:
+    image: postgres:10.3
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: db
+      POSTGRES_USER: dbuser
+      POSTGRES_PASSWORD: dbpass
+  mysql:
+    image: mysql:5.7.22
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_DATABASE: db
+      MYSQL_USER: dbuser
+      MYSQL_PASSWORD: dbpass
+      MYSQL_ROOT_PASSWORD: dbrootpass
+  app:
+    build: .
+    command: stack test
+    volumes:
+      - .:/app
+      - .stack:/root/.stack
+    depends_on:
+      - postgres
+      - mysql
