@@ -6,7 +6,7 @@ import Data.Text (Text)
 import qualified Data.Text as Text (unpack)
 import Data.Extensible (Member, Match(..), (:*), (<:), nil)
 import Data.Functor.Identity (Identity(..))
-import Database.Persist (PersistValue(..))
+import Database.Persist (Entity, PersistValue(..))
 import qualified Database.Persist.TH as Persist (mkPersist, persistLowerCase, share, sqlSettings)
 import ExSql.Syntax.Arithmetic
 import ExSql.Syntax.Comparison
@@ -43,13 +43,13 @@ printers p
 pp :: Maybe Relativity -> Maybe Relativity -> Expr Nodes Identity a -> (Text, DList PersistValue)
 pp = pretty (printers pp)
 
-s1 :: SelectQuery E Person
+s1 :: SelectQuery E (Entity Person)
 s1 = selectFrom $ \person -> where_ e1
 
 main :: IO ()
 main = do
     let (c, s) = renderSelect pp s1
-        r = c [PersistText "abc", PersistInt64 20]
+        r = c [PersistInt64 1, PersistText "abc", PersistInt64 20]
     print s
     print r
     putStrLn "hello"

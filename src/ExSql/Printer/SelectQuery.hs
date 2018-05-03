@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, RankNTypes #-}
+{-# LANGUAGE OverloadedStrings, RankNTypes, GADTs #-}
 module ExSql.Printer.SelectQuery
     ( renderSelect
     ) where
@@ -8,10 +8,11 @@ import qualified Control.Monad.Trans.Writer.Strict as Writer (tell, runWriter)
 import Data.DList (DList)
 import qualified Data.DList as DList
 import Data.Functor.Identity (Identity(..))
-import Data.Proxy (Proxy(..))
+import Data.Proxy (Proxy(..), asProxyTypeOf)
 import Data.Text (Text)
 import qualified Data.Text as Text (unpack)
-import qualified Database.Persist as Persist (EntityDef(..), PersistEntity(..), PersistValue(..), DBName(..))
+import qualified Database.Persist as Persist (DBName(..), Entity, EntityDef(..), PersistEntity(..), PersistValue(..))
+import qualified Database.Persist.Sql.Util as Persist (parseEntityValues)
 
 import ExSql.Syntax.Class
 import ExSql.Syntax.Relativity
@@ -47,7 +48,9 @@ renderSelectInternal p (Where cond query) = do
     convert <- renderSelectInternal p query
     Writer.tell clauses
     return convert
-renderSelectInternal _ Initial = return (Persist.fromPersistValues)
+renderSelectInternal _ i @ Initial =
+    let def = Persist.entityDef (toProxy . asProxyTypeOf undefined $ i)
+    in return (Persist.parseEntityValues def)
 
 toProxy :: f a -> Proxy a
 toProxy _ = Proxy
