@@ -8,8 +8,7 @@ module ExSql.Syntax.SelectQuery
 
 import Database.Persist (Entity(..), PersistEntity(..))
 import ExSql.Syntax.Class
-
-data Ref record
+import ExSql.Syntax.Internal.Types (Ref)
 
 data SelectQuery (g :: * -> *) a where
     SelectFrom :: (PersistEntity record) => (Ref record -> SelectQuery g (Entity record) -> SelectQuery g a) -> SelectQuery g a
