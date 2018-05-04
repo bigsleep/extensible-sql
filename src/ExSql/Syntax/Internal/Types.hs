@@ -1,5 +1,8 @@
 module ExSql.Syntax.Internal.Types
-    ( Ref
+    ( Ref(..)
+    , FieldRef(..)
     ) where
 
-data Ref a
+data Ref a = Ref Int
+
+data FieldRef a = FieldRef Int

@@ -25,6 +25,7 @@ dependencies:
 - extensible
 - mtl
 - persistent
+- safe
 - text
 - transformers
 
