@@ -4,8 +4,10 @@ module ExSql.Printer.SelectQuery
     ) where
 
 import Control.Monad.Trans.Class (lift)
+import Control.Monad.Trans.Reader (ReaderT)
+import qualified Control.Monad.Trans.Reader as Reader (ask, runReaderT)
 import Control.Monad.Trans.State.Strict (State, StateT)
-import qualified Control.Monad.Trans.State.Strict as State (get, gets, modify', put, evalStateT)
+import qualified Control.Monad.Trans.State.Strict as State (get, modify', put, evalStateT)
 import Control.Monad.Trans.Writer.Strict (Writer)
 import qualified Control.Monad.Trans.Writer.Strict as Writer (tell, runWriter)
 import Data.DList (DList)
@@ -23,8 +25,6 @@ import ExSql.Syntax.Class
 import ExSql.Syntax.Relativity
 import ExSql.Syntax.SelectQuery
 import ExSql.Syntax.Internal.Types
-
-type PersistConvert a = [Persist.PersistValue] -> Either Text a
 
 type SelectResult a = StateT (Int, Int) (Writer SelectClauses) (PersistConvert a)
 
@@ -46,14 +46,24 @@ renderSelect p query = Writer.runWriter . flip State.evalStateT (0, 0) $ (render
 
 renderSelectInternal :: (forall x. Maybe Relativity -> Maybe Relativity -> g x -> (Text, DList Persist.PersistValue)) -> SelectQuery g a -> SelectResult a
 renderSelectInternal p (SelectFrom f) = do
-    index <- State.gets fst
-    State.modify' $ \(i, j) -> (i + 1, j)
-    let ref = Ref index :: (Persist.PersistEntity record) => Ref record
+    (i, j) <- State.get
+    State.put (i + 1, j)
+    let ref = Ref i :: (Persist.PersistEntity record) => Ref record
         proxy = toProxy ref
         tableName = Persist.unDBName . Persist.entityDB . Persist.entityDef $ proxy
-        clauses = SelectClauses mempty (Clause . return $ (tableName, mempty)) mempty
+        clauses = mempty { scFrom = (Clause . return $ (tableName, mempty)) }
     lift . Writer.tell $ clauses
     renderSelectInternal p (f ref Initial)
+renderSelectInternal p (As selector f query) = do
+    (i, j) <- State.get
+    let (convert', next) = mkPersistConvert j selector
+        convert = Reader.runReaderT convert'
+        clauses = mempty { scField = (renderSelectorFields p selector) }
+        (fieldRef, _) = mkSelectorFieldRef j selector
+    State.put (i, next)
+    lift . Writer.tell $ clauses
+    renderSelectInternal p query
+    renderSelectInternal p (f fieldRef (Transform convert))
 renderSelectInternal p (Where cond query) = do
     let a = p Nothing Nothing cond
         clauses =  SelectClauses mempty mempty (Clause . return $ a)
@@ -67,35 +77,26 @@ renderSelectInternal _ i @ Initial =
 toProxy :: f a -> Proxy a
 toProxy _ = Proxy
 
-extractSelector :: Selector g a -> [Persist.PersistValue] -> StateT Int (Either Text) a
-extractSelector (f :$ a) vals = do
-    index <- State.get
-    val <- maybe (lift . Left $ "index out of range") return (vals `atMay` index)
-    r <- lift . Persist.fromPersistValue $ val
-    State.put (index + 1)
-    return (f r)
-extractSelector (s :* a) vals = do
-    f <- extractSelector s vals
-    index <- State.get
-    val <- maybe (lift . Left $ "index out of range") return (vals `atMay` index)
-    r <- lift . Persist.fromPersistValue $ val
-    State.put (index + 1)
+mkPersistConvert :: Int -> Selector g a -> (ReaderT [Persist.PersistValue] (Either Text) a, Int)
+mkPersistConvert i (f :$ _) = (mkPersistConvertInternal i f, i + 1)
+mkPersistConvert i (s :* _) =
+    let (m, j) = mkPersistConvert i s
+        n = m >>= mkPersistConvertInternal j
+    in (n, j + 1)
+mkPersistConvertInternal k f = do
+    vals <- Reader.ask
+    r <- maybe (lift . Left $ "index out of range") (lift . Persist.fromPersistValue) (vals `atMay` k)
     return (f r)
 
 renderSelectorFields :: (forall x. Maybe Relativity -> Maybe Relativity -> g x -> (Text, DList Persist.PersistValue)) -> Selector g a -> Clause
 renderSelectorFields p (_ :$ a) = Clause . return . p Nothing Nothing $ a
 renderSelectorFields p (s :* a) = renderSelectorFields p s `mappend` (Clause . return . p Nothing Nothing $ a)
 
-mkSelectorFieldRef :: Selector g a -> State Int (Selector FieldRef a)
-mkSelectorFieldRef (f :$ a) = do
-    index <- State.get
-    State.put (index + 1)
-    return (f :$ toFieldRef index a)
-mkSelectorFieldRef (s :* a) = do
-    r <- mkSelectorFieldRef s
-    index <- State.get
-    State.put (index + 1)
-    return (r :* toFieldRef index a)
+mkSelectorFieldRef :: Int -> Selector g a -> (Selector FieldRef a, Int)
+mkSelectorFieldRef i (f :$ a) = (f :$ toFieldRef i a, i + 1)
+mkSelectorFieldRef i (s :* a) =
+    let (r, next) = mkSelectorFieldRef i s
+    in (r :* toFieldRef next a, next + 1)
 
 toFieldRef :: Int -> g a -> FieldRef a
 toFieldRef index _ = FieldRef index
