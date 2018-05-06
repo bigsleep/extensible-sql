@@ -1,6 +1,9 @@
 {-# LANGUAGE OverloadedStrings, RankNTypes, GADTs, GeneralizedNewtypeDeriving #-}
 module ExSql.Printer.SelectQuery
-    ( renderSelect
+    ( SelectResult
+    , Clause(..)
+    , SelectClauses(..)
+    , renderSelect
     ) where
 
 import Control.Monad.Trans.Class (lift)
@@ -29,13 +32,13 @@ import ExSql.Syntax.Internal.Types
 type SelectResult a = StateT (Int, Int) (Writer SelectClauses) (PersistConvert a)
 
 newtype Clause = Clause (DList (Text, DList Persist.PersistValue))
-    deriving (Show, Monoid)
+    deriving (Show, Monoid, Eq)
 
 data SelectClauses = SelectClauses
     { scField :: !Clause
     , scFrom :: !Clause
     , scWhere :: !Clause
-    } deriving (Show)
+    } deriving (Show, Eq)
 
 instance Monoid SelectClauses where
     mempty = SelectClauses mempty mempty mempty
@@ -73,6 +76,7 @@ renderSelectInternal p (Where cond query) = do
 renderSelectInternal _ i @ Initial =
     let def = Persist.entityDef (toProxy . asProxyTypeOf undefined $ i)
     in return (Persist.parseEntityValues def)
+renderSelectInternal _ (Transform convert) = return convert
 
 toProxy :: f a -> Proxy a
 toProxy _ = Proxy
