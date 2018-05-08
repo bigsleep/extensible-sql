@@ -5,7 +5,6 @@ module ExSql.Syntax.Column
     , (.^)
     ) where
 
-import Control.Monad.Reader.Class (MonadReader(..))
 import Data.Extensible (Member)
 import Database.Persist.Class (PersistEntity(..))
 import ExSql.Syntax.Class

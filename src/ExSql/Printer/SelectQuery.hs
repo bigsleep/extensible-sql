@@ -57,7 +57,7 @@ renderSelectInternal p (SelectFrom f) = do
         clauses = mempty { scFrom = (Clause . return $ (tableName, mempty)) }
     lift . Writer.tell $ clauses
     renderSelectInternal p (f ref Initial)
-renderSelectInternal p (As selector f query) = do
+renderSelectInternal p (ResultAs selector f query) = do
     (i, j) <- State.get
     let (convert', next) = mkPersistConvert j selector
         convert = Reader.runReaderT convert'
