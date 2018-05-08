@@ -2,6 +2,7 @@
 module ExSql.Syntax.SelectQuery
     ( SelectQuery(..)
     , Selector(..)
+    , OrderType(..)
     , Ref
     , selectFrom
     , resultAs
@@ -16,6 +17,7 @@ data SelectQuery (g :: * -> *) a where
     SelectFrom :: (PersistEntity record) => (Ref record -> SelectQuery g (Entity record) -> SelectQuery g a) -> SelectQuery g a
     ResultAs :: Selector g a -> (Selector FieldRef a -> SelectQuery g a -> SelectQuery g b) -> SelectQuery g c -> SelectQuery g b
     Where :: g Bool -> SelectQuery g a -> SelectQuery g a
+    OrderBy :: g b -> OrderType -> SelectQuery g a -> SelectQuery g a
     Initial :: (PersistEntity a) => SelectQuery g (Entity a)
     Transform :: PersistConvert a -> SelectQuery g a
 
@@ -25,6 +27,8 @@ instance Hoist SelectQuery where
     hoist _ Initial = Initial
     hoist _ (Transform f) = Transform f
 
+data OrderType = Asc | Desc deriving (Show, Eq)
+
 selectFrom :: (PersistEntity record) => (Ref record -> SelectQuery g (Entity record) -> SelectQuery g a) -> SelectQuery g a
 selectFrom = SelectFrom
 
@@ -33,6 +37,9 @@ resultAs = ResultAs
 
 where_ :: g Bool -> SelectQuery g a -> SelectQuery g a
 where_ = Where
+
+orderBy :: g b -> OrderType -> SelectQuery g a -> SelectQuery g a
+orderBy = OrderBy
 
 data Selector g x where
     (:$) :: (PersistField a) => (a -> b) -> g a -> Selector g b

@@ -34,15 +34,20 @@ type SelectResult a = StateT (Int, Int) (Writer SelectClauses) (PersistConvert a
 newtype Clause = Clause (DList (Text, DList Persist.PersistValue))
     deriving (Show, Monoid, Eq)
 
+newtype OrderByClause = OrderByClause (DList (Text, OrderType, DList Persist.PersistValue))
+    deriving (Show, Monoid, Eq)
+
 data SelectClauses = SelectClauses
     { scField :: !Clause
     , scFrom :: !Clause
     , scWhere :: !Clause
+    , scOrderBy :: !OrderByClause
     } deriving (Show, Eq)
 
 instance Monoid SelectClauses where
-    mempty = SelectClauses mempty mempty mempty
-    mappend (SelectClauses field0 from0 where0) (SelectClauses field1 from1 where1) = SelectClauses (field0 `mappend` field1) (from0 `mappend` from1) (where0 `mappend` where1)
+    mempty = SelectClauses mempty mempty mempty mempty
+    mappend (SelectClauses field0 from0 where0 orderBy0) (SelectClauses field1 from1 where1 orderBy1) =
+        SelectClauses (field0 `mappend` field1) (from0 `mappend` from1) (where0 `mappend` where1) (orderBy0 `mappend` orderBy1)
 
 renderSelect :: (forall x. Maybe Relativity -> Maybe Relativity -> g x -> (Text, DList Persist.PersistValue)) -> SelectQuery g a -> (PersistConvert a, SelectClauses)
 renderSelect p query = Writer.runWriter . flip State.evalStateT (0, 0) $ (renderSelectInternal p query)
@@ -67,9 +72,15 @@ renderSelectInternal p (ResultAs selector f query) = do
     lift . Writer.tell $ clauses
     renderSelectInternal p query
     renderSelectInternal p (f fieldRef (Transform convert))
+renderSelectInternal p (OrderBy a order query) = do
+    let (t, ps) = p Nothing Nothing a
+        clauses = mempty { scOrderBy = OrderByClause . return $ (t, order, ps) }
+    convert <- renderSelectInternal p query
+    lift . Writer.tell $ clauses
+    return convert
 renderSelectInternal p (Where cond query) = do
     let a = p Nothing Nothing cond
-        clauses =  SelectClauses mempty mempty (Clause . return $ a)
+        clauses = mempty { scWhere = Clause . return $ a }
     convert <- renderSelectInternal p query
     lift . Writer.tell $ clauses
     return convert
