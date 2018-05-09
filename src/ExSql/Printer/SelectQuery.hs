@@ -6,6 +6,7 @@ module ExSql.Printer.SelectQuery
     , renderSelect
     ) where
 
+import Control.Monad (MonadPlus(..))
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Reader (ReaderT)
 import qualified Control.Monad.Trans.Reader as Reader (ask, runReaderT)
@@ -13,6 +14,7 @@ import Control.Monad.Trans.State.Strict (State, StateT)
 import qualified Control.Monad.Trans.State.Strict as State (get, modify', put, evalStateT)
 import Control.Monad.Trans.Writer.Strict (Writer)
 import qualified Control.Monad.Trans.Writer.Strict as Writer (tell, runWriter)
+import Data.Int (Int64)
 import Data.DList (DList)
 import qualified Data.DList as DList
 import Data.Functor.Identity (Identity(..))
@@ -37,17 +39,21 @@ newtype Clause = Clause (DList (Text, DList Persist.PersistValue))
 newtype OrderByClause = OrderByClause (DList (Text, OrderType, DList Persist.PersistValue))
     deriving (Show, Monoid, Eq)
 
+data LimitClause = LimitClause (Maybe Int64) (Maybe Int64)
+    deriving (Show, Eq)
+
 data SelectClauses = SelectClauses
     { scField :: !Clause
     , scFrom :: !Clause
     , scWhere :: !Clause
     , scOrderBy :: !OrderByClause
+    , scLimit :: !LimitClause
     } deriving (Show, Eq)
 
 instance Monoid SelectClauses where
-    mempty = SelectClauses mempty mempty mempty mempty
-    mappend (SelectClauses field0 from0 where0 orderBy0) (SelectClauses field1 from1 where1 orderBy1) =
-        SelectClauses (field0 `mappend` field1) (from0 `mappend` from1) (where0 `mappend` where1) (orderBy0 `mappend` orderBy1)
+    mempty = SelectClauses mempty mempty mempty mempty (LimitClause Nothing Nothing)
+    mappend (SelectClauses field0 from0 where0 orderBy0 (LimitClause offset0 limit0)) (SelectClauses field1 from1 where1 orderBy1 (LimitClause offset1 limit1)) =
+        SelectClauses (field0 `mappend` field1) (from0 `mappend` from1) (where0 `mappend` where1) (orderBy0 `mappend` orderBy1) (LimitClause (offset0 `mplus` offset1) (limit0 `mplus` limit1))
 
 renderSelect :: (forall x. Maybe Relativity -> Maybe Relativity -> g x -> (Text, DList Persist.PersistValue)) -> SelectQuery g a -> (PersistConvert a, SelectClauses)
 renderSelect p query = Writer.runWriter . flip State.evalStateT (0, 0) $ (renderSelectInternal p query)
@@ -72,15 +78,25 @@ renderSelectInternal p (ResultAs selector f query) = do
     lift . Writer.tell $ clauses
     renderSelectInternal p query
     renderSelectInternal p (f fieldRef (Transform convert))
+renderSelectInternal p (Where cond query) = do
+    let a = p Nothing Nothing cond
+        clauses = mempty { scWhere = Clause . return $ a }
+    convert <- renderSelectInternal p query
+    lift . Writer.tell $ clauses
+    return convert
 renderSelectInternal p (OrderBy a order query) = do
     let (t, ps) = p Nothing Nothing a
         clauses = mempty { scOrderBy = OrderByClause . return $ (t, order, ps) }
     convert <- renderSelectInternal p query
     lift . Writer.tell $ clauses
     return convert
-renderSelectInternal p (Where cond query) = do
-    let a = p Nothing Nothing cond
-        clauses = mempty { scWhere = Clause . return $ a }
+renderSelectInternal p (Limit limit query) = do
+    let clauses = mempty { scLimit = LimitClause Nothing (Just limit) }
+    convert <- renderSelectInternal p query
+    lift . Writer.tell $ clauses
+    return convert
+renderSelectInternal p (Offset offset query) = do
+    let clauses = mempty { scLimit = LimitClause (Just offset) Nothing }
     convert <- renderSelectInternal p query
     lift . Writer.tell $ clauses
     return convert

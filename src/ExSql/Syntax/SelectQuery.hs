@@ -7,8 +7,11 @@ module ExSql.Syntax.SelectQuery
     , selectFrom
     , resultAs
     , where_
+    , limit
+    , offset
     ) where
 
+import Data.Int (Int64)
 import Database.Persist (Entity(..), PersistEntity(..), PersistField(..))
 import ExSql.Syntax.Class
 import ExSql.Syntax.Internal.Types (Ref, FieldRef, PersistConvert)
@@ -18,6 +21,8 @@ data SelectQuery (g :: * -> *) a where
     ResultAs :: Selector g a -> (Selector FieldRef a -> SelectQuery g a -> SelectQuery g b) -> SelectQuery g c -> SelectQuery g b
     Where :: g Bool -> SelectQuery g a -> SelectQuery g a
     OrderBy :: g b -> OrderType -> SelectQuery g a -> SelectQuery g a
+    Limit :: Int64 -> SelectQuery g a -> SelectQuery g a
+    Offset :: Int64 -> SelectQuery g a -> SelectQuery g a
     Initial :: (PersistEntity a) => SelectQuery g (Entity a)
     Transform :: PersistConvert a -> SelectQuery g a
 
@@ -40,6 +45,12 @@ where_ = Where
 
 orderBy :: g b -> OrderType -> SelectQuery g a -> SelectQuery g a
 orderBy = OrderBy
+
+limit :: Int64 -> SelectQuery g a -> SelectQuery g a
+limit = Limit
+
+offset :: Int64 -> SelectQuery g a -> SelectQuery g a
+offset = Offset
 
 data Selector g x where
     (:$) :: (PersistField a) => (a -> b) -> g a -> Selector g b
