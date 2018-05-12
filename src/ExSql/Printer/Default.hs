@@ -43,9 +43,14 @@ prettyFun fname args = (fname `mappend` "(" `mappend` Text.intercalate ", " xs `
     xs = map fst args
     ps = mconcat $ map snd args
 
-prettyLiteral :: Maybe Relativity -> Maybe Relativity -> Literal g a -> (Text, DList PersistValue)
-prettyLiteral _ _ (LitInt a) = ("?", return $ PersistInt64 a)
-prettyLiteral _ _ (LitBool a) = ("?", return $ PersistBool a)
+prettyLiteral :: (forall b. Maybe Relativity -> Maybe Relativity -> Expr xs Identity b -> (Text, DList PersistValue)) -> Maybe Relativity -> Maybe Relativity -> Literal (Expr xs Identity) a -> (Text, DList PersistValue)
+prettyLiteral _ _ _ (LitInt a) = ("?", return $ PersistInt64 a)
+prettyLiteral _ _ _ (LitBool a) = ("?", return $ PersistBool a)
+prettyLiteral p _ _ (LitValueList a) = ("(" `mappend` x `mappend` ")", ps)
+    where
+    elems = map (p Nothing Nothing) a
+    x = Text.intercalate ", " $ map fst elems
+    ps = mconcat $ map snd elems
 
 prettyComparison :: (forall b. Maybe Relativity -> Maybe Relativity -> Expr xs Identity b -> (Text, DList PersistValue)) -> Maybe Relativity -> Maybe Relativity -> Comparison (Expr xs Identity) a -> (Text, DList PersistValue)
 prettyComparison p l r (Equality a0 a1) =

@@ -37,7 +37,7 @@ printers p
     =  Printer (prettyLogical p)
     <: Printer (prettyComparison p)
     <: Printer (prettyArithmetic p)
-    <: Printer (prettyLiteral)
+    <: Printer (prettyLiteral p)
     <: nil
 
 pp :: Maybe Relativity -> Maybe Relativity -> Expr Nodes Identity a -> (Text, DList PersistValue)

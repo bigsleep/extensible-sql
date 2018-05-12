@@ -8,6 +8,7 @@ import Control.Monad.Trans.Reader (ReaderT, runReaderT)
 import Data.Extensible (Member, Match(..), (:|)(..), (:*), (<:), nil, hindex)
 import Data.Functor.Identity (Identity(..))
 import Data.Int (Int64)
+import Data.List (intercalate)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import ExSql.Syntax.Arithmetic
@@ -28,12 +29,15 @@ ppArithmetic p (Subtraction a0 a1) = "(" `mappend` p a0 `mappend` "-" `mappend` 
 ppArithmetic p (Multiplication a0 a1) = "(" `mappend` p a0 `mappend` "*" `mappend` p a1 `mappend` ")"
 ppArithmetic p (Division a0 a1) = "(" `mappend` p a0 `mappend` "/" `mappend` p a1 `mappend` ")"
 
-ppLiteral :: Literal (Expr xs Identity) a -> String
-ppLiteral (LitInt a) = show a
-ppLiteral (LitBool a) = show a
+ppLiteral :: (forall b. Expr Nodes Identity b -> String) -> Literal (Expr Nodes Identity) a -> String
+ppLiteral p (LitInt a) = show a
+ppLiteral p (LitBool a) = show a
+ppLiteral p (LitValueList a) = "(" `mappend` intercalate ", " xs `mappend` ")"
+    where
+    xs = map p a
 
 printers :: (forall b. Expr Nodes Identity b -> String) -> Printers Nodes a
-printers p = Printer (ppLiteral)
+printers p = Printer (ppLiteral p)
     <: Printer (ppArithmetic p)
     <: nil
 
