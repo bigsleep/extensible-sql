@@ -25,8 +25,11 @@ import ExSql.Syntax.Relativity (Relativity(..), Precedence(..), Associativity(..
 import ExSql.Syntax.Arithmetic
 import ExSql.Syntax.Comparison
 import ExSql.Syntax.Function
+import ExSql.Syntax.In
 import ExSql.Syntax.Literal
 import ExSql.Syntax.Logical
+import ExSql.Syntax.Internal.Row
+import ExSql.Syntax.Internal.Types
 
 pretty :: Printer (Expr xs Identity) :* xs -> Maybe Relativity -> Maybe Relativity -> Expr xs Identity a -> (TLB.Builder, DList PersistValue)
 pretty printers l r (Expr (EmbedAt membership (Node (Identity a)))) = runPrinter (hindex printers membership) l r a
@@ -37,15 +40,28 @@ prettyBinOp p l c r op a b =
         (rt, rps) = p (Just c) r b
     in (handleBracket l c r $ lt `mappend` TLB.fromText op `mappend` rt, lps `mappend` rps)
 
+prettyVals :: [(TLB.Builder, DList PersistValue)] -> (TLB.Builder, DList PersistValue)
+prettyVals vals = (t, ps)
+    where
+    xs = map fst vals
+    t = TLB.singleton '('
+        `mappend` mconcat (List.intersperse (TLB.fromText ", ") xs)
+        `mappend` TLB.singleton ')'
+    ps = mconcat $ map snd vals
+
 prettyFun :: Text -> [(TLB.Builder, DList PersistValue)] -> (TLB.Builder, DList PersistValue)
 prettyFun fname args = (t, ps)
     where
-    xs = map fst args
-    t = TLB.fromText fname
-        `mappend` TLB.singleton '('
-        `mappend` mconcat (List.intersperse (TLB.fromText ", ") xs)
-        `mappend` TLB.singleton ')'
-    ps = mconcat $ map snd args
+    (x, ps) = prettyVals args
+    t = TLB.fromText fname `mappend` x
+
+prettyRow :: ExprPrinterType (Expr xs Identity) -> Maybe Relativity -> Maybe Relativity -> Row (Expr xs Identity) a -> (TLB.Builder, DList PersistValue)
+prettyRow p l r (Row a) = p l r a
+prettyRow p _ _ (Row2 (a0, a1)) = prettyVals [p Nothing Nothing a0, p Nothing Nothing a1]
+prettyRow p _ _ (Row3 (a0, a1, a2)) = prettyVals [p Nothing Nothing a0, p Nothing Nothing a1, p Nothing Nothing a2]
+prettyRow p _ _ (Row4 (a0, a1, a2, a3)) = prettyVals [p Nothing Nothing a0, p Nothing Nothing a1, p Nothing Nothing a2, p Nothing Nothing a3]
+prettyRow p _ _ (Row5 (a0, a1, a2, a3, a4)) = prettyVals [p Nothing Nothing a0, p Nothing Nothing a1, p Nothing Nothing a2, p Nothing Nothing a3, p Nothing Nothing a4]
+prettyRow p _ _ (Row6 (a0, a1, a2, a3, a4, a5)) = prettyVals [p Nothing Nothing a0, p Nothing Nothing a1, p Nothing Nothing a2, p Nothing Nothing a3, p Nothing Nothing a4, p Nothing Nothing a5]
 
 prettyLiteral :: ExprPrinterType (Expr xs Identity) -> PrinterType (Expr xs Identity) Literal a
 prettyLiteral _ _ _ (LitInt a) = (TLB.singleton '?', return $ PersistInt64 a)
@@ -94,6 +110,15 @@ prettyArithmetic p l r (Division a0 a1) =
     let c = Relativity (Precedence 6) LeftToRight
     in prettyBinOp p l c r "/" a0 a1
 
+prettyIn :: ExprPrinterType (Expr xs Identity) -> PrinterType (Expr xs Identity) In a
+prettyIn p l r (In a b) =
+    let c = Just $ Relativity (Precedence 12) NonAssociative
+        (t0, ps0) = prettyRow p l c a
+        (t1, ps1) = p c r b
+        t = t0 `mappend` TLB.fromText " IN " `mappend` t1
+        ps = ps0 `mappend` ps1
+    in (t, ps)
+
 prettyLogical :: ExprPrinterType (Expr xs Identity) -> PrinterType (Expr xs Identity) Logical a
 prettyLogical p l r (LogicalNegation a) =
     let c = Relativity (Precedence 13) RightToLeft
@@ -109,23 +134,26 @@ prettyLogical p l r (Disjunction a0 a1) =
 prettyFunction :: ExprPrinterType (Expr xs Identity) -> PrinterType (Expr xs Identity) Function a
 prettyFunction _ _ _ (Function0 fname) = prettyFun fname []
 prettyFunction p _ _ (Function1 fname a0) =
-    prettyFun fname $ [p Nothing Nothing a0]
+    prettyFun fname [p Nothing Nothing a0]
 prettyFunction p _ _ (Function2 fname a0 a1) =
-    prettyFun fname $ [p Nothing Nothing a0, p Nothing Nothing a1]
+    prettyFun fname [p Nothing Nothing a0, p Nothing Nothing a1]
 prettyFunction p _ _ (Function3 fname a0 a1 a2) =
-    prettyFun fname $ [p Nothing Nothing a0, p Nothing Nothing a1, p Nothing Nothing a2]
+    prettyFun fname [p Nothing Nothing a0, p Nothing Nothing a1, p Nothing Nothing a2]
 prettyFunction p _ _ (Function4 fname a0 a1 a2 a3) =
-    prettyFun fname $ [p Nothing Nothing a0, p Nothing Nothing a1, p Nothing Nothing a2, p Nothing Nothing a3]
+    prettyFun fname [p Nothing Nothing a0, p Nothing Nothing a1, p Nothing Nothing a2, p Nothing Nothing a3]
 prettyFunction p _ _ (Function5 fname a0 a1 a2 a3 a4) =
-    prettyFun fname $ [p Nothing Nothing a0, p Nothing Nothing a1, p Nothing Nothing a2, p Nothing Nothing a3, p Nothing Nothing a4]
+    prettyFun fname [p Nothing Nothing a0, p Nothing Nothing a1, p Nothing Nothing a2, p Nothing Nothing a3, p Nothing Nothing a4]
 prettyFunction p _ _ (Function6 fname a0 a1 a2 a3 a4 a5) =
-    prettyFun fname $ [p Nothing Nothing a0, p Nothing Nothing a1, p Nothing Nothing a2, p Nothing Nothing a3, p Nothing Nothing a4, p Nothing Nothing a5]
+    prettyFun fname [p Nothing Nothing a0, p Nothing Nothing a1, p Nothing Nothing a2, p Nothing Nothing a3, p Nothing Nothing a4, p Nothing Nothing a5]
+
+addBracket :: TLB.Builder -> TLB.Builder
+addBracket a = TLB.singleton '('
+    `mappend` a
+    `mappend` TLB.singleton ')'
 
 handleBracket :: Maybe Relativity -> Relativity -> Maybe Relativity -> TLB.Builder -> TLB.Builder
 handleBracket l c r s = if needBracket l c r
-    then TLB.singleton '('
-        `mappend` s
-        `mappend` TLB.singleton ')'
+    then addBracket s
     else s
 
 needBracket :: Maybe Relativity -> Relativity -> Maybe Relativity -> Bool
