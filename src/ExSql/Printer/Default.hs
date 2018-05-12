@@ -13,8 +13,9 @@ import qualified Data.DList as DList
 import Data.Extensible ((:*), (:|)(..), hindex)
 import Data.Functor.Identity (Identity(..))
 import Data.Int (Int64)
+import qualified Data.List as List (intersperse)
 import Data.Text (Text)
-import qualified Data.Text as Text (pack, intercalate)
+import qualified Data.Text.Lazy.Builder as TLB
 
 import Database.Persist (PersistValue(..))
 
@@ -27,28 +28,35 @@ import ExSql.Syntax.Function
 import ExSql.Syntax.Literal
 import ExSql.Syntax.Logical
 
-pretty :: Printer (Expr xs Identity) :* xs -> Maybe Relativity -> Maybe Relativity -> Expr xs Identity a -> (Text, DList PersistValue)
+pretty :: Printer (Expr xs Identity) :* xs -> Maybe Relativity -> Maybe Relativity -> Expr xs Identity a -> (TLB.Builder, DList PersistValue)
 pretty printers l r (Expr (EmbedAt membership (Node (Identity a)))) = runPrinter (hindex printers membership) l r a
 
-prettyBinOp :: ExprPrinterType (Expr xs Identity) -> Maybe Relativity -> Relativity -> Maybe Relativity -> Text -> Expr xs Identity a -> Expr xs Identity b -> (Text, DList PersistValue)
+prettyBinOp :: ExprPrinterType (Expr xs Identity) -> Maybe Relativity -> Relativity -> Maybe Relativity -> Text -> Expr xs Identity a -> Expr xs Identity b -> (TLB.Builder, DList PersistValue)
 prettyBinOp p l c r op a b =
     let (lt, lps) = p l (Just c) a
         (rt, rps) = p (Just c) r b
-    in (handleBracket l c r $ lt `mappend` op `mappend` rt, lps `mappend` rps)
+    in (handleBracket l c r $ lt `mappend` TLB.fromText op `mappend` rt, lps `mappend` rps)
 
-prettyFun :: Text -> [(Text, DList PersistValue)] -> (Text, DList PersistValue)
-prettyFun fname args = (fname `mappend` "(" `mappend` Text.intercalate ", " xs `mappend` ")", ps)
+prettyFun :: Text -> [(TLB.Builder, DList PersistValue)] -> (TLB.Builder, DList PersistValue)
+prettyFun fname args = (t, ps)
     where
     xs = map fst args
+    t = TLB.fromText fname
+        `mappend` TLB.singleton '('
+        `mappend` mconcat (List.intersperse (TLB.fromText ", ") xs)
+        `mappend` TLB.singleton ')'
     ps = mconcat $ map snd args
 
 prettyLiteral :: ExprPrinterType (Expr xs Identity) -> PrinterType (Expr xs Identity) Literal a
-prettyLiteral _ _ _ (LitInt a) = ("?", return $ PersistInt64 a)
-prettyLiteral _ _ _ (LitBool a) = ("?", return $ PersistBool a)
-prettyLiteral p _ _ (LitValueList a) = ("(" `mappend` x `mappend` ")", ps)
+prettyLiteral _ _ _ (LitInt a) = (TLB.singleton '?', return $ PersistInt64 a)
+prettyLiteral _ _ _ (LitBool a) = (TLB.singleton '?', return $ PersistBool a)
+prettyLiteral p _ _ (LitValueList a) = (t, ps)
     where
     elems = map (p Nothing Nothing) a
-    x = Text.intercalate ", " $ map fst elems
+    xs = map fst elems
+    t = TLB.singleton '('
+        `mappend` mconcat (List.intersperse (TLB.fromText ", ") xs)
+        `mappend` TLB.singleton ')'
     ps = mconcat $ map snd elems
 
 prettyComparison :: ExprPrinterType (Expr xs Identity) -> PrinterType (Expr xs Identity) Comparison a
@@ -72,7 +80,7 @@ prettyArithmetic :: ExprPrinterType (Expr xs Identity) -> PrinterType (Expr xs I
 prettyArithmetic p l r (Negation a) =
     let c = Relativity (Precedence 4) RightToLeft
         (t, ps) = p (Just c) r a
-    in (handleBracket l c r $ "-" `mappend` t, ps)
+    in (handleBracket l c r $ TLB.singleton '-' `mappend` t, ps)
 prettyArithmetic p l r (Addition a0 a1) =
     let c = Relativity (Precedence 7) LeftToRight
     in prettyBinOp p l c r "+" a0 a1
@@ -90,7 +98,7 @@ prettyLogical :: ExprPrinterType (Expr xs Identity) -> PrinterType (Expr xs Iden
 prettyLogical p l r (LogicalNegation a) =
     let c = Relativity (Precedence 13) RightToLeft
         (t, ps) = p (Just c) r a
-    in (handleBracket l c r $ "NOT " `mappend` t, ps)
+    in (handleBracket l c r $ TLB.fromText "NOT " `mappend` t, ps)
 prettyLogical p l r (Conjunction a0 a1) =
     let c = Relativity (Precedence 14) LeftToRight
     in prettyBinOp p l c r " AND " a0 a1
@@ -113,9 +121,11 @@ prettyFunction p _ _ (Function5 fname a0 a1 a2 a3 a4) =
 prettyFunction p _ _ (Function6 fname a0 a1 a2 a3 a4 a5) =
     prettyFun fname $ [p Nothing Nothing a0, p Nothing Nothing a1, p Nothing Nothing a2, p Nothing Nothing a3, p Nothing Nothing a4, p Nothing Nothing a5]
 
-handleBracket :: Maybe Relativity -> Relativity -> Maybe Relativity -> Text -> Text
+handleBracket :: Maybe Relativity -> Relativity -> Maybe Relativity -> TLB.Builder -> TLB.Builder
 handleBracket l c r s = if needBracket l c r
-    then "(" `mappend` s `mappend` ")"
+    then TLB.singleton '('
+        `mappend` s
+        `mappend` TLB.singleton ')'
     else s
 
 needBracket :: Maybe Relativity -> Relativity -> Maybe Relativity -> Bool

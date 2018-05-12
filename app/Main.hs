@@ -4,6 +4,7 @@ module Main where
 import Data.DList (DList)
 import Data.Text (Text)
 import qualified Data.Text as Text (unpack)
+import qualified Data.Text.Lazy.Builder as TLB
 import Data.Extensible (Member, Match(..), (:*), (<:), nil)
 import Data.Functor.Identity (Identity(..))
 import Database.Persist (Entity, PersistValue(..))
@@ -17,6 +18,7 @@ import ExSql.Syntax.Relativity
 import ExSql.Syntax.SelectQuery
 import ExSql.Printer.Default
 import ExSql.Printer.SelectQuery
+import ExSql.Printer.Types
 
 Persist.share [Persist.mkPersist Persist.sqlSettings] [Persist.persistLowerCase|
 Person
@@ -32,7 +34,7 @@ type Nodes = '[Logical, Comparison, Arithmetic, Literal]
 type E = Expr Nodes Identity
 type Printers xs a = Printer (Expr xs Identity) :* xs
 
-printers :: (forall b. Maybe Relativity -> Maybe Relativity -> Expr Nodes Identity b -> (Text, DList PersistValue)) -> Printers Nodes a
+printers :: ExprPrinterType (Expr Nodes Identity) -> Printers Nodes a
 printers p
     =  Printer (prettyLogical p)
     <: Printer (prettyComparison p)
@@ -40,7 +42,7 @@ printers p
     <: Printer (prettyLiteral p)
     <: nil
 
-pp :: Maybe Relativity -> Maybe Relativity -> Expr Nodes Identity a -> (Text, DList PersistValue)
+pp :: Maybe Relativity -> Maybe Relativity -> Expr Nodes Identity a -> (TLB.Builder, DList PersistValue)
 pp = pretty (printers pp)
 
 s1 :: SelectQuery E (Entity Person)

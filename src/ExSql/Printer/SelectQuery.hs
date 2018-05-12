@@ -22,10 +22,12 @@ import Data.Maybe (maybe)
 import Data.Proxy (Proxy(..), asProxyTypeOf)
 import Data.Text (Text)
 import qualified Data.Text as Text (unpack)
+import qualified Data.Text.Lazy.Builder as TLB
 import qualified Database.Persist as Persist (DBName(..), Entity, EntityDef(..), PersistEntity(..), PersistField(..), PersistValue(..))
 import qualified Database.Persist.Sql.Util as Persist (parseEntityValues)
 import Safe (atMay)
 
+import ExSql.Printer.Types
 import ExSql.Syntax.Class
 import ExSql.Syntax.Relativity
 import ExSql.Syntax.SelectQuery
@@ -33,10 +35,10 @@ import ExSql.Syntax.Internal.Types
 
 type SelectResult a = StateT (Int, Int) (Writer SelectClauses) (PersistConvert a)
 
-newtype Clause = Clause (DList (Text, DList Persist.PersistValue))
+newtype Clause = Clause (DList (TLB.Builder, DList Persist.PersistValue))
     deriving (Show, Monoid, Eq)
 
-newtype OrderByClause = OrderByClause (DList (Text, OrderType, DList Persist.PersistValue))
+newtype OrderByClause = OrderByClause (DList (TLB.Builder, OrderType, DList Persist.PersistValue))
     deriving (Show, Monoid, Eq)
 
 data LimitClause = LimitClause (Maybe Int64) (Maybe Int64)
@@ -55,17 +57,17 @@ instance Monoid SelectClauses where
     mappend (SelectClauses field0 from0 where0 orderBy0 (LimitClause offset0 limit0)) (SelectClauses field1 from1 where1 orderBy1 (LimitClause offset1 limit1)) =
         SelectClauses (field0 `mappend` field1) (from0 `mappend` from1) (where0 `mappend` where1) (orderBy0 `mappend` orderBy1) (LimitClause (offset0 `mplus` offset1) (limit0 `mplus` limit1))
 
-renderSelect :: (forall x. Maybe Relativity -> Maybe Relativity -> g x -> (Text, DList Persist.PersistValue)) -> SelectQuery g a -> (PersistConvert a, SelectClauses)
+renderSelect :: ExprPrinterType g -> SelectQuery g a -> (PersistConvert a, SelectClauses)
 renderSelect p query = Writer.runWriter . flip State.evalStateT (0, 0) $ (renderSelectInternal p query)
 
-renderSelectInternal :: (forall x. Maybe Relativity -> Maybe Relativity -> g x -> (Text, DList Persist.PersistValue)) -> SelectQuery g a -> SelectResult a
+renderSelectInternal :: ExprPrinterType g -> SelectQuery g a -> SelectResult a
 renderSelectInternal p (SelectFrom f) = do
     (i, j) <- State.get
     State.put (i + 1, j)
     let ref = Ref i :: (Persist.PersistEntity record) => Ref record
         proxy = toProxy ref
         tableName = Persist.unDBName . Persist.entityDB . Persist.entityDef $ proxy
-        clauses = mempty { scFrom = (Clause . return $ (tableName, mempty)) }
+        clauses = mempty { scFrom = (Clause . return $ (TLB.fromText tableName, mempty)) }
     lift . Writer.tell $ clauses
     renderSelectInternal p (f ref Initial)
 renderSelectInternal p (ResultAs selector f query) = do
@@ -119,7 +121,7 @@ mkPersistConvertInternal k f = do
     r <- maybe (lift . Left $ "index out of range") (lift . Persist.fromPersistValue) (vals `atMay` k)
     return (f r)
 
-renderSelectorFields :: (forall x. Maybe Relativity -> Maybe Relativity -> g x -> (Text, DList Persist.PersistValue)) -> Selector g a -> Clause
+renderSelectorFields :: ExprPrinterType g -> Selector g a -> Clause
 renderSelectorFields p (_ :$ a) = Clause . return . p Nothing Nothing $ a
 renderSelectorFields p (s :* a) = renderSelectorFields p s `mappend` (Clause . return . p Nothing Nothing $ a)
 

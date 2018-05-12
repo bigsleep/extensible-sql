@@ -7,6 +7,7 @@ import Data.DList (DList)
 import qualified Data.DList as DList
 import Data.Text (Text)
 import qualified Data.Text as Text (unpack)
+import qualified Data.Text.Lazy.Builder as TLB
 import Data.Functor.Identity (Identity(..))
 import Database.Persist (Entity, PersistValue(..))
 import Database.Persist.Class (PersistField(..))
@@ -16,6 +17,7 @@ import ExSql.Syntax.SelectQuery
 import ExSql.Syntax.Relativity
 import ExSql.Syntax.Internal.Types
 import ExSql.Printer.SelectQuery
+import ExSql.Printer.Types
 
 import Test.Hspec
 
@@ -29,10 +31,10 @@ Person
 data E a where
     E :: (PersistField a) => a -> E a
 
-pe :: Maybe Relativity -> Maybe Relativity -> E a -> (Text, DList PersistValue)
+pe :: ExprPrinterType E
 pe _ _ (E a) =
     let v = toPersistValue a
-    in ("?", return v)
+    in (TLB.singleton '?', return v)
 
 sq1 :: SelectQuery Identity (Entity Person)
 sq1 = selectFrom $ \_ -> id
