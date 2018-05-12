@@ -18,6 +18,7 @@ import qualified Data.Text as Text (pack, intercalate)
 
 import Database.Persist (PersistValue(..))
 
+import ExSql.Printer.Types (Printer(..), PrinterType, ExprPrinterType)
 import ExSql.Syntax.Class (Expr(..), Node(..))
 import ExSql.Syntax.Relativity (Relativity(..), Precedence(..), Associativity(..))
 import ExSql.Syntax.Arithmetic
@@ -26,12 +27,10 @@ import ExSql.Syntax.Function
 import ExSql.Syntax.Literal
 import ExSql.Syntax.Logical
 
-newtype Printer (g :: * -> *) (v :: (* -> *) -> * -> *) = Printer { runPrinter :: forall a. Maybe Relativity -> Maybe Relativity -> v g a -> (Text, DList PersistValue) }
-
 pretty :: Printer (Expr xs Identity) :* xs -> Maybe Relativity -> Maybe Relativity -> Expr xs Identity a -> (Text, DList PersistValue)
 pretty printers l r (Expr (EmbedAt membership (Node (Identity a)))) = runPrinter (hindex printers membership) l r a
 
-prettyBinOp :: (forall x. Maybe Relativity -> Maybe Relativity -> Expr xs Identity x -> (Text, DList PersistValue)) -> Maybe Relativity -> Relativity -> Maybe Relativity -> Text -> Expr xs Identity a -> Expr xs Identity b -> (Text, DList PersistValue)
+prettyBinOp :: ExprPrinterType (Expr xs Identity) -> Maybe Relativity -> Relativity -> Maybe Relativity -> Text -> Expr xs Identity a -> Expr xs Identity b -> (Text, DList PersistValue)
 prettyBinOp p l c r op a b =
     let (lt, lps) = p l (Just c) a
         (rt, rps) = p (Just c) r b
@@ -43,7 +42,7 @@ prettyFun fname args = (fname `mappend` "(" `mappend` Text.intercalate ", " xs `
     xs = map fst args
     ps = mconcat $ map snd args
 
-prettyLiteral :: (forall b. Maybe Relativity -> Maybe Relativity -> Expr xs Identity b -> (Text, DList PersistValue)) -> Maybe Relativity -> Maybe Relativity -> Literal (Expr xs Identity) a -> (Text, DList PersistValue)
+prettyLiteral :: ExprPrinterType (Expr xs Identity) -> PrinterType (Expr xs Identity) Literal a
 prettyLiteral _ _ _ (LitInt a) = ("?", return $ PersistInt64 a)
 prettyLiteral _ _ _ (LitBool a) = ("?", return $ PersistBool a)
 prettyLiteral p _ _ (LitValueList a) = ("(" `mappend` x `mappend` ")", ps)
@@ -52,7 +51,7 @@ prettyLiteral p _ _ (LitValueList a) = ("(" `mappend` x `mappend` ")", ps)
     x = Text.intercalate ", " $ map fst elems
     ps = mconcat $ map snd elems
 
-prettyComparison :: (forall b. Maybe Relativity -> Maybe Relativity -> Expr xs Identity b -> (Text, DList PersistValue)) -> Maybe Relativity -> Maybe Relativity -> Comparison (Expr xs Identity) a -> (Text, DList PersistValue)
+prettyComparison :: ExprPrinterType (Expr xs Identity) -> PrinterType (Expr xs Identity) Comparison a
 prettyComparison p l r (Equality a0 a1) =
     let c = Relativity (Precedence 11) NonAssociative
     in prettyBinOp p l c r "==" a0 a1
@@ -69,7 +68,7 @@ prettyComparison p l r (LessThanOrEqual a0 a1) =
     let c = Relativity (Precedence 11) NonAssociative
     in prettyBinOp p l c r "<=" a0 a1
 
-prettyArithmetic :: (forall b. Maybe Relativity -> Maybe Relativity -> Expr xs Identity b -> (Text, DList PersistValue)) -> Maybe Relativity -> Maybe Relativity -> Arithmetic (Expr xs Identity) a -> (Text, DList PersistValue)
+prettyArithmetic :: ExprPrinterType (Expr xs Identity) -> PrinterType (Expr xs Identity) Arithmetic a
 prettyArithmetic p l r (Negation a) =
     let c = Relativity (Precedence 4) RightToLeft
         (t, ps) = p (Just c) r a
@@ -87,7 +86,7 @@ prettyArithmetic p l r (Division a0 a1) =
     let c = Relativity (Precedence 6) LeftToRight
     in prettyBinOp p l c r "/" a0 a1
 
-prettyLogical :: (forall b. Maybe Relativity -> Maybe Relativity -> Expr xs Identity b -> (Text, DList PersistValue)) -> Maybe Relativity -> Maybe Relativity -> Logical (Expr xs Identity) a -> (Text, DList PersistValue)
+prettyLogical :: ExprPrinterType (Expr xs Identity) -> PrinterType (Expr xs Identity) Logical a
 prettyLogical p l r (LogicalNegation a) =
     let c = Relativity (Precedence 13) RightToLeft
         (t, ps) = p (Just c) r a
@@ -99,7 +98,7 @@ prettyLogical p l r (Disjunction a0 a1) =
     let c = Relativity (Precedence 16) LeftToRight
     in prettyBinOp p l c r " OR " a0 a1
 
-prettyFunction :: (forall b. Maybe Relativity -> Maybe Relativity -> Expr xs Identity b -> (Text, DList PersistValue)) -> Maybe Relativity -> Maybe Relativity -> Function (Expr xs Identity) a -> (Text, DList PersistValue)
+prettyFunction :: ExprPrinterType (Expr xs Identity) -> PrinterType (Expr xs Identity) Function a
 prettyFunction _ _ _ (Function0 fname) = prettyFun fname []
 prettyFunction p _ _ (Function1 fname a0) =
     prettyFun fname $ [p Nothing Nothing a0]
