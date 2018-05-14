@@ -25,7 +25,7 @@ import Database.Persist (PersistValue(..))
 import qualified Database.Persist as Persist (DBName(..))
 import qualified Database.Persist.Sql as Persist (fieldDBName)
 
-import ExSql.Printer.Types (Printer(..), PrinterType, ExprPrinterType)
+import ExSql.Printer.Types (Printer(..), PrinterType, ExprPrinterType, StatementBuilder(..))
 import ExSql.Syntax.Class (Expr(..), Node(..))
 import ExSql.Syntax.Relativity (Relativity(..), Precedence(..), Associativity(..))
 import ExSql.Syntax.Arithmetic
@@ -38,31 +38,31 @@ import ExSql.Syntax.Logical
 import ExSql.Syntax.Internal.Row
 import ExSql.Syntax.Internal.Types
 
-pretty :: Printer (Expr xs Identity) :* xs -> Maybe Relativity -> Maybe Relativity -> Expr xs Identity a -> (TLB.Builder, DList PersistValue)
+pretty :: Printer (Expr xs Identity) :* xs -> Maybe Relativity -> Maybe Relativity -> Expr xs Identity a -> StatementBuilder
 pretty printers l r (Expr (EmbedAt membership (Node (Identity a)))) = runPrinter (hindex printers membership) l r a
 
-prettyBinOp :: ExprPrinterType (Expr xs Identity) -> Maybe Relativity -> Relativity -> Maybe Relativity -> Text -> Expr xs Identity a -> Expr xs Identity b -> (TLB.Builder, DList PersistValue)
+prettyBinOp :: ExprPrinterType (Expr xs Identity) -> Maybe Relativity -> Relativity -> Maybe Relativity -> Text -> Expr xs Identity a -> Expr xs Identity b -> StatementBuilder
 prettyBinOp p l c r op a b =
-    let (lt, lps) = p l (Just c) a
-        (rt, rps) = p (Just c) r b
-    in (handleBracket l c r $ lt `mappend` TLB.fromText op `mappend` rt, lps `mappend` rps)
+    let StatementBuilder (lt, lps) = p l (Just c) a
+        StatementBuilder (rt, rps) = p (Just c) r b
+    in StatementBuilder (handleBracket l c r $ lt `mappend` TLB.fromText op `mappend` rt, lps `mappend` rps)
 
-prettyVals :: [(TLB.Builder, DList PersistValue)] -> (TLB.Builder, DList PersistValue)
-prettyVals vals = (t, ps)
+prettyVals :: [StatementBuilder] -> StatementBuilder
+prettyVals vals = StatementBuilder (t, ps)
     where
-    xs = map fst vals
+    xs = map (fst . unStatementBuilder) vals
     t = TLB.singleton '('
         `mappend` mconcat (List.intersperse (TLB.fromText ", ") xs)
         `mappend` TLB.singleton ')'
-    ps = mconcat $ map snd vals
+    ps = mconcat $ map (snd . unStatementBuilder) vals
 
-prettyFun :: Text -> [(TLB.Builder, DList PersistValue)] -> (TLB.Builder, DList PersistValue)
-prettyFun fname args = (t, ps)
+prettyFun :: Text -> [StatementBuilder] -> StatementBuilder
+prettyFun fname args = StatementBuilder (t, ps)
     where
-    (x, ps) = prettyVals args
+    StatementBuilder (x, ps) = prettyVals args
     t = TLB.fromText fname `mappend` x
 
-prettyRow :: ExprPrinterType (Expr xs Identity) -> Maybe Relativity -> Maybe Relativity -> Row (Expr xs Identity) a -> (TLB.Builder, DList PersistValue)
+prettyRow :: ExprPrinterType (Expr xs Identity) -> Maybe Relativity -> Maybe Relativity -> Row (Expr xs Identity) a -> StatementBuilder
 prettyRow p l r (Row a) = p l r a
 prettyRow p _ _ (Row2 (a0, a1)) = prettyVals [p Nothing Nothing a0, p Nothing Nothing a1]
 prettyRow p _ _ (Row3 (a0, a1, a2)) = prettyVals [p Nothing Nothing a0, p Nothing Nothing a1, p Nothing Nothing a2]
@@ -71,16 +71,16 @@ prettyRow p _ _ (Row5 (a0, a1, a2, a3, a4)) = prettyVals [p Nothing Nothing a0, 
 prettyRow p _ _ (Row6 (a0, a1, a2, a3, a4, a5)) = prettyVals [p Nothing Nothing a0, p Nothing Nothing a1, p Nothing Nothing a2, p Nothing Nothing a3, p Nothing Nothing a4, p Nothing Nothing a5]
 
 prettyLiteral :: ExprPrinterType (Expr xs Identity) -> PrinterType (Expr xs Identity) Literal a
-prettyLiteral _ _ _ (LitInt a) = (TLB.singleton '?', return $ PersistInt64 a)
-prettyLiteral _ _ _ (LitBool a) = (TLB.singleton '?', return $ PersistBool a)
-prettyLiteral p _ _ (LitValueList a) = (t, ps)
+prettyLiteral _ _ _ (LitInt a) = StatementBuilder (TLB.singleton '?', return $ PersistInt64 a)
+prettyLiteral _ _ _ (LitBool a) = StatementBuilder (TLB.singleton '?', return $ PersistBool a)
+prettyLiteral p _ _ (LitValueList a) = StatementBuilder (t, ps)
     where
     elems = map (p Nothing Nothing) a
-    xs = map fst elems
+    xs = map (fst . unStatementBuilder) elems
     t = TLB.singleton '('
         `mappend` mconcat (List.intersperse (TLB.fromText ", ") xs)
         `mappend` TLB.singleton ')'
-    ps = mconcat $ map snd elems
+    ps = mconcat $ map (snd . unStatementBuilder) elems
 
 prettyComparison :: ExprPrinterType (Expr xs Identity) -> PrinterType (Expr xs Identity) Comparison a
 prettyComparison p l r (Equality a0 a1) =
@@ -102,8 +102,8 @@ prettyComparison p l r (LessThanOrEqual a0 a1) =
 prettyArithmetic :: ExprPrinterType (Expr xs Identity) -> PrinterType (Expr xs Identity) Arithmetic a
 prettyArithmetic p l r (Negation a) =
     let c = Relativity (Precedence 4) RightToLeft
-        (t, ps) = p (Just c) r a
-    in (handleBracket l c r $ TLB.singleton '-' `mappend` t, ps)
+        StatementBuilder (t, ps) = p (Just c) r a
+    in StatementBuilder (handleBracket l c r $ TLB.singleton '-' `mappend` t, ps)
 prettyArithmetic p l r (Addition a0 a1) =
     let c = Relativity (Precedence 7) LeftToRight
     in prettyBinOp p l c r "+" a0 a1
@@ -120,17 +120,17 @@ prettyArithmetic p l r (Division a0 a1) =
 prettyIn :: ExprPrinterType (Expr xs Identity) -> PrinterType (Expr xs Identity) In a
 prettyIn p l r (In a b) =
     let c = Just $ Relativity (Precedence 12) NonAssociative
-        (t0, ps0) = prettyRow p l c a
-        (t1, ps1) = p c r b
+        StatementBuilder (t0, ps0) = prettyRow p l c a
+        StatementBuilder (t1, ps1) = p c r b
         t = t0 `mappend` TLB.fromText " IN " `mappend` t1
         ps = ps0 `mappend` ps1
-    in (t, ps)
+    in StatementBuilder (t, ps)
 
 prettyLogical :: ExprPrinterType (Expr xs Identity) -> PrinterType (Expr xs Identity) Logical a
 prettyLogical p l r (LogicalNegation a) =
     let c = Relativity (Precedence 13) RightToLeft
-        (t, ps) = p (Just c) r a
-    in (handleBracket l c r $ TLB.fromText "NOT " `mappend` t, ps)
+        StatementBuilder (t, ps) = p (Just c) r a
+    in StatementBuilder (handleBracket l c r $ TLB.fromText "NOT " `mappend` t, ps)
 prettyLogical p l r (Conjunction a0 a1) =
     let c = Relativity (Precedence 14) LeftToRight
     in prettyBinOp p l c r " AND " a0 a1
@@ -166,7 +166,7 @@ prettyColumn p l r (Column (Ref tid) col) =
             `mappend` TLB.singleton '`'
             `mappend` TLB.fromText columnName
             `mappend` TLB.singleton '`'
-    in (handleBracket l c r x, mempty)
+    in StatementBuilder (handleBracket l c r x, mempty)
 
 addBracket :: TLB.Builder -> TLB.Builder
 addBracket a = TLB.singleton '('

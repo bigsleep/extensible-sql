@@ -42,7 +42,7 @@ printers p
     <: Printer (prettyLiteral p)
     <: nil
 
-pp :: Maybe Relativity -> Maybe Relativity -> Expr Nodes Identity a -> (TLB.Builder, DList PersistValue)
+pp :: Maybe Relativity -> Maybe Relativity -> Expr Nodes Identity a -> StatementBuilder
 pp = pretty (printers pp)
 
 s1 :: SelectQuery E (Entity Person)

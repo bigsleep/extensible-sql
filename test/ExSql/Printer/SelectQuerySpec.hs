@@ -34,7 +34,7 @@ data E a where
 pe :: ExprPrinterType E
 pe _ _ (E a) =
     let v = toPersistValue a
-    in (TLB.singleton '?', return v)
+    in StatementBuilder (TLB.singleton '?', return v)
 
 sq1 :: SelectQuery Identity (Entity Person)
 sq1 = selectFrom $ \_ -> id
@@ -46,13 +46,17 @@ spec :: Spec
 spec = describe "SelectQuery" $ do
     it "from clause" $ do
         let (_, r) = renderSelect undefined sq1
-        r `shouldBe` mempty { scFrom = Clause . return $ ("person", mempty) }
+        r `shouldBe` mempty { scFrom = Clause . return $ StatementBuilder ("person", mempty) }
 
     it "field clause" $ do
         let (convert, r) = renderSelect pe sq2
             expected = mempty
-                { scField = Clause . DList.fromList $ [("?", return $ PersistInt64 1), ("?", return $ PersistText "a"), ("?", return $ PersistInt64 2)]
-                , scFrom = Clause . return $ ("person", mempty)
+                { scField = Clause . DList.fromList $
+                    [ StatementBuilder ("?", return $ PersistInt64 1)
+                    , StatementBuilder ("?", return $ PersistText "a")
+                    , StatementBuilder ("?", return $ PersistInt64 2)
+                    ]
+                , scFrom = Clause . return $ StatementBuilder ("person", mempty)
                 }
         r `shouldBe` expected
         convert [PersistInt64 1, PersistText "a", PersistInt64 2] `shouldBe` Right (1, "a", 2)
