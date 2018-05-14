@@ -4,6 +4,7 @@ module ExSql.Printer.SelectQuery
     , Clause(..)
     , SelectClauses(..)
     , renderSelect
+    , printFieldRef
     ) where
 
 import Control.Monad (MonadPlus(..))
@@ -23,6 +24,7 @@ import Data.Proxy (Proxy(..), asProxyTypeOf)
 import Data.Text (Text)
 import qualified Data.Text as Text (unpack)
 import qualified Data.Text.Lazy.Builder as TLB
+import qualified Data.Text.Lazy.Builder.Int as TLB
 import qualified Database.Persist as Persist (DBName(..), Entity, EntityDef(..), PersistEntity(..), PersistField(..), PersistValue(..))
 import qualified Database.Persist.Sql.Util as Persist (parseEntityValues)
 import Safe (atMay)
@@ -133,3 +135,11 @@ mkSelectorFieldRef i (s :* a) =
 
 toFieldRef :: Int -> g a -> FieldRef a
 toFieldRef index _ = FieldRef index
+
+printFieldRef :: FieldRef a -> TLB.Builder
+printFieldRef (FieldRef fid) =
+    let prefix = "f_"
+    in TLB.singleton '`'
+        `mappend` TLB.fromText prefix
+        `mappend` TLB.decimal fid
+        `mappend` TLB.singleton '`'
