@@ -4,7 +4,10 @@ module ExSql.Printer.Default
     , pretty
     , prettyLiteral
     , prettyArithmetic
+    , prettyColumn
     , prettyComparison
+    , prettyFunction
+    , prettyIn
     , prettyLogical
     ) where
 
@@ -16,13 +19,17 @@ import Data.Int (Int64)
 import qualified Data.List as List (intersperse)
 import Data.Text (Text)
 import qualified Data.Text.Lazy.Builder as TLB
+import qualified Data.Text.Lazy.Builder.Int as TLB
 
 import Database.Persist (PersistValue(..))
+import qualified Database.Persist as Persist (DBName(..))
+import qualified Database.Persist.Sql as Persist (fieldDBName)
 
 import ExSql.Printer.Types (Printer(..), PrinterType, ExprPrinterType)
 import ExSql.Syntax.Class (Expr(..), Node(..))
 import ExSql.Syntax.Relativity (Relativity(..), Precedence(..), Associativity(..))
 import ExSql.Syntax.Arithmetic
+import ExSql.Syntax.Column
 import ExSql.Syntax.Comparison
 import ExSql.Syntax.Function
 import ExSql.Syntax.In
@@ -145,6 +152,21 @@ prettyFunction p _ _ (Function5 fname a0 a1 a2 a3 a4) =
     prettyFun fname [p Nothing Nothing a0, p Nothing Nothing a1, p Nothing Nothing a2, p Nothing Nothing a3, p Nothing Nothing a4]
 prettyFunction p _ _ (Function6 fname a0 a1 a2 a3 a4 a5) =
     prettyFun fname [p Nothing Nothing a0, p Nothing Nothing a1, p Nothing Nothing a2, p Nothing Nothing a3, p Nothing Nothing a4, p Nothing Nothing a5]
+
+prettyColumn :: ExprPrinterType (Expr xs Identity) -> PrinterType (Expr xs Identity) Column a
+prettyColumn p l r (Column (Ref tid) col) =
+    let c = Relativity (Precedence 3) LeftToRight
+        prefix = "t_"
+        columnName = Persist.unDBName . Persist.fieldDBName $ col
+        x = TLB.singleton '`'
+            `mappend` TLB.fromText prefix
+            `mappend` TLB.decimal tid
+            `mappend` TLB.singleton '`'
+            `mappend` TLB.singleton '.'
+            `mappend` TLB.singleton '`'
+            `mappend` TLB.fromText columnName
+            `mappend` TLB.singleton '`'
+    in (handleBracket l c r x, mempty)
 
 addBracket :: TLB.Builder -> TLB.Builder
 addBracket a = TLB.singleton '('
