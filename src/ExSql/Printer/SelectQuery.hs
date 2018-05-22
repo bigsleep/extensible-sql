@@ -5,6 +5,7 @@ module ExSql.Printer.SelectQuery
     , SelectClauses(..)
     , renderSelect
     , printFieldRef
+    , printSelect
     ) where
 
 import Control.Monad (MonadPlus(..))

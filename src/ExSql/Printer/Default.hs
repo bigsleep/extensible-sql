@@ -26,6 +26,7 @@ import qualified Database.Persist as Persist (DBName(..))
 import qualified Database.Persist.Sql as Persist (fieldDBName)
 
 import ExSql.Printer.Types (Printer(..), PrinterType, ExprPrinterType, StatementBuilder(..))
+import ExSql.Printer.SelectQuery
 import ExSql.Syntax.Class (Expr(..), Node(..))
 import ExSql.Syntax.Relativity (Relativity(..), Precedence(..), Associativity(..))
 import ExSql.Syntax.Arithmetic
@@ -35,6 +36,7 @@ import ExSql.Syntax.Function
 import ExSql.Syntax.In
 import ExSql.Syntax.Literal
 import ExSql.Syntax.Logical
+import ExSql.Syntax.SubSelect
 import ExSql.Syntax.Internal.Row
 import ExSql.Syntax.Internal.Types
 
@@ -163,6 +165,11 @@ printColumn p l r (Column (Ref tid) col) =
             `mappend` TLB.singleton '.'
             `mappend` TLB.fromText columnName
     in StatementBuilder (handleBracket l c r x, mempty)
+
+printSubSelect :: ExprPrinterType (Expr xs Identity) -> PrinterType (Expr xs Identity) SubSelect a
+printSubSelect p _ _ (SubSelect query) =
+    let StatementBuilder (t, ps) = printSelect p query
+    in StatementBuilder (addBracket t, ps)
 
 addBracket :: TLB.Builder -> TLB.Builder
 addBracket a = TLB.singleton '('

@@ -54,4 +54,5 @@ main = do
         r = c [PersistInt64 1, PersistText "abc", PersistInt64 20]
     print s
     print r
+    print $ printSelect pp s1
     putStrLn "hello"
