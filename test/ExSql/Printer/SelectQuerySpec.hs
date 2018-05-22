@@ -52,9 +52,9 @@ spec = describe "SelectQuery" $ do
         let (convert, r) = renderSelect pe sq2
             expected = mempty
                 { scField = Clause . DList.fromList $
-                    [ StatementBuilder ("?", return $ PersistInt64 1)
-                    , StatementBuilder ("?", return $ PersistText "a")
-                    , StatementBuilder ("?", return $ PersistInt64 2)
+                    [ StatementBuilder ("? AS f_0", return $ PersistInt64 1)
+                    , StatementBuilder ("? AS f_1", return $ PersistText "a")
+                    , StatementBuilder ("? AS f_2", return $ PersistInt64 2)
                     ]
                 , scFrom = Clause . return $ StatementBuilder ("person", mempty)
                 }
