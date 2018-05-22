@@ -36,14 +36,14 @@ type Printers xs a = Printer (Expr xs Identity) :* xs
 
 printers :: ExprPrinterType (Expr Nodes Identity) -> Printers Nodes a
 printers p
-    =  Printer (prettyLogical p)
-    <: Printer (prettyComparison p)
-    <: Printer (prettyArithmetic p)
-    <: Printer (prettyLiteral p)
+    =  Printer (printLogical p)
+    <: Printer (printComparison p)
+    <: Printer (printArithmetic p)
+    <: Printer (printLiteral p)
     <: nil
 
 pp :: Maybe Relativity -> Maybe Relativity -> Expr Nodes Identity a -> StatementBuilder
-pp = pretty (printers pp)
+pp = printExpr (printers pp)
 
 s1 :: SelectQuery E (Entity Person)
 s1 = selectFrom $ \person -> where_ e1
