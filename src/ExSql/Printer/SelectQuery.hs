@@ -199,10 +199,8 @@ toFieldRef index _ = FieldRef index
 printFieldRef :: FieldRef a -> TLB.Builder
 printFieldRef (FieldRef fid) =
     let prefix = "f_"
-    in TLB.singleton '`'
-        <> TLB.fromText prefix
+    in TLB.fromText prefix
         <> TLB.decimal fid
-        <> TLB.singleton '`'
 
 renderFieldClause :: ExprPrinterType g -> FieldRef a -> g a -> Clause
 renderFieldClause p fr a =

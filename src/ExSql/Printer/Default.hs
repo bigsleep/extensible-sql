@@ -158,14 +158,10 @@ printColumn p l r (Column (Ref tid) col) =
     let c = Relativity (Precedence 3) LeftToRight
         prefix = "t_"
         columnName = Persist.unDBName . Persist.fieldDBName $ col
-        x = TLB.singleton '`'
-            `mappend` TLB.fromText prefix
+        x = TLB.fromText prefix
             `mappend` TLB.decimal tid
-            `mappend` TLB.singleton '`'
             `mappend` TLB.singleton '.'
-            `mappend` TLB.singleton '`'
             `mappend` TLB.fromText columnName
-            `mappend` TLB.singleton '`'
     in StatementBuilder (handleBracket l c r x, mempty)
 
 addBracket :: TLB.Builder -> TLB.Builder
