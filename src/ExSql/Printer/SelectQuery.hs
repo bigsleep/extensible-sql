@@ -101,6 +101,7 @@ printWhereClause (Clause xs) = StatementBuilder (t, mconcat ps)
         <> (mconcat . intersperse (TLB.fromText " AND ") $ ts)
 
 printOrderByClause :: OrderByClause -> StatementBuilder
+printOrderByClause (OrderByClause DList.Nil) = mempty
 printOrderByClause (OrderByClause xs) = StatementBuilder (t, mconcat ps)
     where
     ys = DList.toList xs
