@@ -17,6 +17,7 @@ import Data.Extensible ((:*), (:|)(..), hindex)
 import Data.Functor.Identity (Identity(..))
 import Data.Int (Int64)
 import qualified Data.List as List (intersperse)
+import qualified Data.List.NonEmpty as NonEmpty (toList)
 import Data.Text (Text)
 import qualified Data.Text.Lazy.Builder as TLB
 import qualified Data.Text.Lazy.Builder.Int as TLB
@@ -77,7 +78,7 @@ printLiteral _ _ _ (LitInt a) = StatementBuilder (TLB.singleton '?', return $ Pe
 printLiteral _ _ _ (LitBool a) = StatementBuilder (TLB.singleton '?', return $ PersistBool a)
 printLiteral p _ _ (LitValueList a) = StatementBuilder (t, ps)
     where
-    elems = map (p Nothing Nothing) a
+    elems = map (p Nothing Nothing) (NonEmpty.toList a)
     xs = map (fst . unStatementBuilder) elems
     t = TLB.singleton '('
         `mappend` mconcat (List.intersperse (TLB.fromText ", ") xs)

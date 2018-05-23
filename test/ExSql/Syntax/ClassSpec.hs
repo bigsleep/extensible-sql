@@ -9,6 +9,7 @@ import Data.Extensible (Member, Match(..), (:|)(..), (:*), (<:), nil, hindex)
 import Data.Functor.Identity (Identity(..))
 import Data.Int (Int64)
 import Data.List (intercalate)
+import qualified Data.List.NonEmpty as NonEmpty (toList)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import ExSql.Syntax.Arithmetic
@@ -34,7 +35,7 @@ ppLiteral p (LitInt a) = show a
 ppLiteral p (LitBool a) = show a
 ppLiteral p (LitValueList a) = "(" `mappend` intercalate ", " xs `mappend` ")"
     where
-    xs = map p a
+    xs = map p (NonEmpty.toList a)
 
 printers :: (forall b. Expr Nodes Identity b -> String) -> Printers Nodes a
 printers p = Printer (ppLiteral p)
