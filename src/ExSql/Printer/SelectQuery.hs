@@ -6,6 +6,7 @@ module ExSql.Printer.SelectQuery
     , renderSelect
     , printFieldRef
     , printSelect
+    , printSelectClauses
     ) where
 
 import Control.Monad (MonadPlus(..))
@@ -82,6 +83,7 @@ printSelectClauses (SelectClauses field from where_ orderBy limit) =
     <> printLimitClause limit
 
 printFieldClause :: Clause -> StatementBuilder
+printFieldClause (Clause DList.Nil) = StatementBuilder (" * ", mempty)
 printFieldClause (Clause xs) = StatementBuilder (t, mconcat ps)
     where
     (ts, ps) = unzip . map unStatementBuilder . DList.toList $ xs
@@ -94,6 +96,7 @@ printFromClause (Clause xs) = StatementBuilder (t, mconcat ps)
     t = TLB.fromText " FROM " <> mconcat (intersperse (TLB.fromText ", ") ts)
 
 printWhereClause :: Clause -> StatementBuilder
+printWhereClause (Clause DList.Nil) = mempty
 printWhereClause (Clause xs) = StatementBuilder (t, mconcat ps)
     where
     (ts, ps) = unzip . map unStatementBuilder . DList.toList $ xs

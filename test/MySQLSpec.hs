@@ -3,6 +3,7 @@ module MySQLSpec
     ( spec
     ) where
 
+import qualified Common
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Resource (runResourceT)
 import Control.Monad.Logger (runNoLoggingT)
@@ -12,14 +13,12 @@ import Database.Persist.MySQL
 import Test.Hspec
 
 spec :: Spec
-spec = do
-    describe "MySQL" $ do
-        it "test1" $ do
-            putStrLn "hello"
-            runNoLoggingT . runResourceT . withMySQLConn connectInfo . runSqlConn $ do
-                r <- rawSql "SHOW DATABASES" []
-                liftIO $ print (r :: [Single Text])
-                return ()
+spec = describe "PostgreSQL" $ do
+    before_ (run . runMigration $ Common.migrateAll) $
+        Common.tests run
+
+    where
+        run = runResourceT . runNoLoggingT . withMySQLConn connectInfo . runSqlConn
 
 connectInfo :: ConnectInfo
 connectInfo = defaultConnectInfo
@@ -27,5 +26,5 @@ connectInfo = defaultConnectInfo
     , connectPort = 3306
     , connectUser = "dbuser"
     , connectPassword = "dbpass"
-    , connectDatabase = ""
+    , connectDatabase = "db"
     }

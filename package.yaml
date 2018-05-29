@@ -53,6 +53,7 @@ tests:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
+    - conduit
     - containers
     - extensible-sql
     - hspec == 2.*

@@ -3,6 +3,7 @@ module PostgreSQLSpec
     ( spec
     ) where
 
+import qualified Common
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Resource (runResourceT)
 import Control.Monad.Logger (runNoLoggingT)
@@ -13,14 +14,11 @@ import Database.Persist.Postgresql
 import Test.Hspec
 
 spec :: Spec
-spec = do
-    describe "PostgreSQL" $ do
-        it "test" $ do
-            putStrLn "hello"
-            runNoLoggingT . runResourceT . withPostgresqlConn connectInfo . runSqlConn $ do
-                r <- rawSql (Text.pack $ "SELECT table_name FROM information_schema.tables;") []
-                liftIO $ print (r :: [Single Text])
-                return ()
+spec = describe "PostgreSQL" $
+    before_ (run . runMigration $ Common.migrateAll) $ Common.tests run
+
+    where
+        run = runResourceT . runNoLoggingT . withPostgresqlConn connectInfo . runSqlConn
 
 connectInfo :: ConnectionString
 connectInfo =
