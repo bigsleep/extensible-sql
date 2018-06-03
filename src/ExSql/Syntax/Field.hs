@@ -5,16 +5,16 @@ module ExSql.Syntax.Field
     ) where
 
 import Data.Extensible (Member)
-import Database.Persist.Class (PersistEntity(..))
+import Database.Persist.Class (PersistField(..))
 import ExSql.Syntax.Class
-import ExSql.Syntax.Internal.Types (FieldRef)
+import ExSql.Syntax.Internal.Types (Ref)
 
 data Field (g :: * -> *) a where
-    Field :: FieldRef a -> Field g a
+    Field :: (PersistField a) => Ref a -> Field g a
 
 instance Hoist Field where
     hoist _ (Field a) = Field a
 
-field :: (Ast g, Monad m, Member (NodeTypes g) Field)
-    => FieldRef a -> g m a
+field :: (Ast g, Monad m, Member (NodeTypes g) Field, PersistField a)
+    => Ref a -> g m a
 field = mkAst . return . Field

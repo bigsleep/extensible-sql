@@ -3,6 +3,7 @@ module ExSql.Printer.SelectQuerySpec
     ( spec
     ) where
 
+import qualified Control.Monad.Trans.State.Strict as State (runStateT)
 import Data.DList (DList)
 import qualified Data.DList as DList
 import Data.Text (Text)
@@ -40,13 +41,13 @@ sq1 :: SelectQuery Identity (Entity Person)
 sq1 = selectFrom $ \_ -> id
 
 sq2 :: SelectQuery E (Int, Text, Int)
-sq2 = selectFrom $ \(r :: Ref Person) -> resultAs ((,,) :$ E 1 :* E "a" :* E 2) $ \_ -> id
+sq2 = selectFrom $ \(r :: ExSql.Syntax.SelectQuery.Selector Ref (Entity Person)) -> resultAs ((,,) :$ E 1 :* E "a" :* E 2) $ \_ -> id
 
 spec :: Spec
 spec = describe "SelectQuery" $ do
     it "from clause" $ do
         let (_, r) = renderSelect undefined sq1
-        r `shouldBe` mempty { scFrom = Clause . return $ StatementBuilder ("person", mempty) }
+        r `shouldBe` mempty { scFrom = Clause . return $ StatementBuilder ("person AS t_0", mempty) }
 
     it "field clause" $ do
         let (convert, r) = renderSelect pe sq2
@@ -56,7 +57,7 @@ spec = describe "SelectQuery" $ do
                     , StatementBuilder ("? AS f_1", return $ PersistText "a")
                     , StatementBuilder ("? AS f_2", return $ PersistInt64 2)
                     ]
-                , scFrom = Clause . return $ StatementBuilder ("person", mempty)
+                , scFrom = Clause . return $ StatementBuilder ("person AS t_0", mempty)
                 }
         r `shouldBe` expected
-        convert [PersistInt64 1, PersistText "a", PersistInt64 2] `shouldBe` Right (1, "a", 2)
+        State.runStateT convert [PersistInt64 1, PersistText "a", PersistInt64 2] `shouldBe` Right ((1, "a", 2), [])

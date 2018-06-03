@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings, DataKinds, FlexibleContexts, GADTs, GeneralizedNewtypeDeriving, KindSignatures, MultiParamTypeClasses, RankNTypes, TypeFamilies, TypeOperators, QuasiQuotes, TemplateHaskell #-}
 module Main where
 
+import qualified Control.Monad.Trans.State.Strict as State (runStateT)
 import Data.DList (DList)
 import Data.Text (Text)
 import qualified Data.Text as Text (unpack)
@@ -51,7 +52,7 @@ s1 = selectFrom $ \person -> where_ e1
 main :: IO ()
 main = do
     let (c, s) = renderSelect pp s1
-        r = c [PersistInt64 1, PersistText "abc", PersistInt64 20]
+        r = State.runStateT c [PersistInt64 1, PersistText "abc", PersistInt64 20]
     print s
     print r
     print $ printSelect pp s1

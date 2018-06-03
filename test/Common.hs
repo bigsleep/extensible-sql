@@ -11,6 +11,7 @@ module Common
 
 import Control.Monad.Trans.Reader (ReaderT)
 import Control.Monad.Trans.Resource (ResourceT, runResourceT)
+import qualified Control.Monad.Trans.State.Strict as State (evalStateT)
 import Control.Monad.Logger (NoLoggingT, runNoLoggingT)
 import Data.Conduit (runConduit, (.|))
 import qualified Data.Conduit.List as CL
@@ -86,11 +87,11 @@ runSelect query = do
         StatementBuilder (tlb, ps) = printSelectClauses sc
         t = TL.toStrict . TLB.toLazyText $ tlb
     xs <- runConduit $ Persist.rawQuery t (DList.toList ps) .| CL.consume
-    return . sequence . fmap convert $ xs
+    return . sequence . fmap (State.evalStateT convert) $ xs
 
 testSelect1 :: Run -> Spec
 testSelect1 run = it "select1" $ do
-    let query = selectFrom $ \(driver :: Ref Driver) -> id
+    let query = selectFrom $ \(driver :: ExSql.Syntax.SelectQuery.Selector Ref (Persist.Entity Driver)) -> id
     r <- run $ do
         Persist.rawExecute "delete from driver" []
         _ <- Persist.insert driver1

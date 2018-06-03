@@ -1,17 +1,19 @@
+{-# LANGUAGE GADTs #-}
 module ExSql.Syntax.Internal.Types
     ( Ref(..)
-    , FieldRef(..)
     , ValueList
     , PersistConvert
     ) where
 
+import Control.Monad
+import Control.Monad.Trans.State.Strict (StateT)
 import Data.Text (Text)
-import Database.Persist (PersistValue(..), PersistField(..))
+import Database.Persist (Entity, PersistEntity(..), PersistField(..), PersistValue(..))
 
-data Ref a = Ref Int
-
-data FieldRef a = FieldRef Int
+data Ref a where
+    EntityRef :: (PersistEntity record) => Int -> Ref (Entity record)
+    FieldRef :: (PersistField field) => Int -> Ref field
 
 data ValueList a
 
-type PersistConvert a = [PersistValue] -> Either Text a
+type PersistConvert a = StateT [PersistValue] (Either Text) a

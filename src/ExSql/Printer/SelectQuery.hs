@@ -4,7 +4,8 @@ module ExSql.Printer.SelectQuery
     , Clause(..)
     , SelectClauses(..)
     , renderSelect
-    , printFieldRef
+    , printFromAlias
+    , printFieldAlias
     , printSelect
     , printSelectClauses
     ) where
@@ -17,26 +18,30 @@ import Control.Monad.Trans.State.Strict (State, StateT)
 import qualified Control.Monad.Trans.State.Strict as State (get, modify', put, evalStateT)
 import Control.Monad.Trans.Writer.Strict (Writer)
 import qualified Control.Monad.Trans.Writer.Strict as Writer (tell, runWriter)
+import Data.Foldable (fold)
 import Data.Int (Int64)
-import Data.List (intersperse)
+import Data.List (intersperse, uncons)
 import Data.DList (DList)
 import qualified Data.DList as DList
 import Data.Functor.Identity (Identity(..))
+import Data.Functor.Product (Product(..))
 import Data.Maybe (maybe)
-import Data.Proxy (Proxy(..), asProxyTypeOf)
+import Data.Proxy (Proxy(..))
 import Data.Semigroup (Semigroup(..))
 import Data.Text (Text)
 import qualified Data.Text as Text (unpack)
 import qualified Data.Text.Lazy.Builder as TLB
 import qualified Data.Text.Lazy.Builder.Int as TLB
-import qualified Database.Persist as Persist (DBName(..), Entity, EntityDef(..), PersistEntity(..), PersistField(..), PersistValue(..))
-import qualified Database.Persist.Sql.Util as Persist (parseEntityValues)
-import Safe (atMay)
+import qualified Database.Persist as Persist (DBName(..), Entity(..), EntityDef(..), PersistEntity(..), PersistField(..), PersistValue(..))
+import qualified Database.Persist.Sql as Persist (tableDBName)
+import qualified Database.Persist.Sql.Util as Persist (entityColumnCount, parseEntityValues)
+import Safe.Exact (splitAtExactMay)
 
 import ExSql.Printer.Types
 import ExSql.Syntax.Class
 import ExSql.Syntax.Relativity
-import ExSql.Syntax.SelectQuery
+import ExSql.Syntax.SelectQuery (SelectQuery(..), Selector(..), OrderType(..))
+import qualified ExSql.Syntax.SelectQuery as Syntax
 import ExSql.Syntax.Internal.Types
 
 type SelectResult a = StateT (Int, Int) (Writer SelectClauses) (PersistConvert a)
@@ -68,7 +73,7 @@ instance Monoid SelectClauses where
     mempty = SelectClauses mempty mempty mempty mempty (LimitClause Nothing Nothing)
     mappend = (<>)
 
-printSelect :: ExprPrinterType g -> SelectQuery g a -> StatementBuilder
+printSelect :: ExprPrinterType g -> Syntax.SelectQuery g a -> StatementBuilder
 printSelect p query =
     let (_, sc) = renderSelect p query
     in printSelectClauses sc
@@ -119,97 +124,73 @@ printLimitClause (LimitClause (Just offset) Nothing) = StatementBuilder (TLB.fro
 printLimitClause (LimitClause Nothing (Just limit)) = StatementBuilder (TLB.fromText " LIMIT " <> TLB.decimal limit, mempty)
 printLimitClause (LimitClause (Just offset) (Just limit)) = StatementBuilder (TLB.fromText " OFFSET " <> TLB.decimal offset <> TLB.fromText " LIMIT " <> TLB.decimal limit, mempty)
 
-renderSelect :: ExprPrinterType g -> SelectQuery g a -> (PersistConvert a, SelectClauses)
-renderSelect p query = Writer.runWriter . flip State.evalStateT (0, 0) $ (renderSelectInternal p query)
+renderSelect :: ExprPrinterType g -> Syntax.SelectQuery g a -> (PersistConvert a, SelectClauses)
+renderSelect p query = (convert, clauses)
+    where
+    (sref, Syntax.SelectClauses sclauses) = Writer.runWriter . flip State.evalStateT (0, 0) . unSelectQuery $ query
+    convert = mkPersistConvert sref
+    clauses = foldMap (renderSelectClause p) sclauses
 
-renderSelectInternal :: ExprPrinterType g -> SelectQuery g a -> SelectResult a
-renderSelectInternal p (SelectFrom f) = do
-    (i, j) <- State.get
-    State.put (i + 1, j)
-    let ref = Ref i :: (Persist.PersistEntity record) => Ref record
-        proxy = toProxy ref
-        tableName = Persist.unDBName . Persist.entityDB . Persist.entityDef $ proxy
-        clauses = mempty { scFrom = (Clause . return . StatementBuilder $ (TLB.fromText tableName, mempty)) }
-    lift . Writer.tell $ clauses
-    renderSelectInternal p (f ref Initial)
-renderSelectInternal p (ResultAs selector f query) = do
-    (i, j) <- State.get
-    let (convert', next) = mkPersistConvert j selector
-        convert = Reader.runReaderT convert'
-        (fieldRef, _) = mkSelectorFieldRef j selector
-        (fieldClause, _) = renderSelectorFields j p selector
-        clauses = mempty { scField = fieldClause }
-    State.put (i, next)
-    lift . Writer.tell $ clauses
-    renderSelectInternal p query
-    renderSelectInternal p (f fieldRef (Transform convert))
-renderSelectInternal p (Where cond query) = do
-    let relativity = Just (Relativity (Precedence 13) RightToLeft)
-        a = p relativity relativity cond
-        clauses = mempty { scWhere = Clause . return $ a }
-    convert <- renderSelectInternal p query
-    lift . Writer.tell $ clauses
-    return convert
-renderSelectInternal p (OrderBy a order query) = do
-    let StatementBuilder (t, ps) = p Nothing Nothing a
-        clauses = mempty { scOrderBy = OrderByClause . return $ (StatementBuilder (t, ps), order) }
-    convert <- renderSelectInternal p query
-    lift . Writer.tell $ clauses
-    return convert
-renderSelectInternal p (Limit limit query) = do
-    let clauses = mempty { scLimit = LimitClause Nothing (Just limit) }
-    convert <- renderSelectInternal p query
-    lift . Writer.tell $ clauses
-    return convert
-renderSelectInternal p (Offset offset query) = do
-    let clauses = mempty { scLimit = LimitClause (Just offset) Nothing }
-    convert <- renderSelectInternal p query
-    lift . Writer.tell $ clauses
-    return convert
-renderSelectInternal _ i @ Initial =
-    let def = Persist.entityDef (toProxy . asProxyTypeOf undefined $ i)
-    in return (Persist.parseEntityValues def)
-renderSelectInternal _ (Transform convert) = return convert
+renderSelectClause :: ExprPrinterType g -> Syntax.SelectClause g -> SelectClauses
+renderSelectClause p (Syntax.Fields fs) = mempty { scField = renderSelectorFields p fs }
+renderSelectClause p (Syntax.From a) = mempty { scFrom = renderFrom p a }
+renderSelectClause p (Syntax.Where w) = mempty { scWhere = Clause . return . p Nothing Nothing $ w }
+renderSelectClause p (Syntax.OrderBy a t) = mempty { scOrderBy = OrderByClause . return $ (p Nothing Nothing a, t) }
+renderSelectClause p (Syntax.Limit limit) = mempty { scLimit = LimitClause Nothing (Just limit) }
+renderSelectClause p (Syntax.Offset offset) = mempty { scLimit = LimitClause (Just offset) Nothing }
+renderSelectClause _ Syntax.Initial = mempty
 
 toProxy :: f a -> Proxy a
 toProxy _ = Proxy
 
-mkPersistConvert :: Int -> Selector g a -> (ReaderT [Persist.PersistValue] (Either Text) a, Int)
-mkPersistConvert i (f :$ _) = (mkPersistConvertInternal i f, i + 1)
-mkPersistConvert i (s :* _) =
-    let (m, j) = mkPersistConvert i s
-        n = m >>= mkPersistConvertInternal j
-    in (n, j + 1)
-mkPersistConvertInternal k f = do
-    vals <- Reader.ask
-    r <- maybe (lift . Left $ "index out of range") (lift . Persist.fromPersistValue) (vals `atMay` k)
+mkPersistConvert :: Selector g a -> PersistConvert a
+mkPersistConvert (Sel a) = do
+    let def = Persist.entityDef . fmap Persist.entityVal . toProxy $ a
+        colNum = Persist.entityColumnCount def
+    xs <- State.get
+    (vals, rest) <- maybe (lift . Left $ "not enough input values") return (splitAtExactMay colNum xs)
+    lift $ Persist.parseEntityValues def vals
+mkPersistConvert (f :$ _) = mkPersistConvertInternal f
+mkPersistConvert (s :* _) = mkPersistConvert s >>= mkPersistConvertInternal
+mkPersistConvertInternal f = do
+    xs <- State.get
+    (val, rest) <- maybe (lift . Left $ "not enough input values") return (uncons xs)
+    State.put rest
+    r <- lift . Persist.fromPersistValue $ val
     return (f r)
 
-renderSelectorFields :: Int -> ExprPrinterType g -> Selector g a -> (Clause, Int)
-renderSelectorFields i p (_ :$ a) = (renderFieldClause p (FieldRef i) a, i + 1)
-renderSelectorFields i p (s :* a) =
-    let (r, next) = renderSelectorFields i p s
-        clause = r <> renderFieldClause p (FieldRef next) a
-    in (clause, next + 1)
+printFromAlias :: Int -> TLB.Builder
+printFromAlias tid =
+    let prefix = "t_"
+    in TLB.fromText prefix
+        <> TLB.decimal tid
 
-mkSelectorFieldRef :: Int -> Selector g a -> (Selector FieldRef a, Int)
-mkSelectorFieldRef i (f :$ a) = (f :$ toFieldRef i a, i + 1)
-mkSelectorFieldRef i (s :* a) =
-    let (r, next) = mkSelectorFieldRef i s
-    in (r :* toFieldRef next a, next + 1)
+renderFrom :: (Persist.PersistEntity record) => ExprPrinterType g -> Ref (Persist.Entity record) -> Clause
+renderFrom p ref @ (EntityRef eid) =
+    let tableName = Persist.unDBName . Persist.entityDB . Persist.entityDef . fmap Persist.entityVal . toProxy $ ref
+        alias = printFromAlias eid
+        a = TLB.fromText tableName <> TLB.fromText " AS " <> alias
+    in Clause . return . StatementBuilder $ (a, mempty)
 
-toFieldRef :: Int -> g a -> FieldRef a
-toFieldRef index _ = FieldRef index
+renderSelectorFields :: ExprPrinterType g -> Selector (Product g Ref) a -> Clause
+renderSelectorFields p (Sel ref) = renderFieldClause mempty ref
+renderSelectorFields p (_ :$ Pair a ref) = renderFieldClause (p Nothing Nothing a) ref
+renderSelectorFields p (s :* Pair a ref) =
+    renderSelectorFields p s <> renderFieldClause (p Nothing Nothing a) ref
 
-printFieldRef :: FieldRef a -> TLB.Builder
-printFieldRef (FieldRef fid) =
+printFieldAlias :: Int -> TLB.Builder
+printFieldAlias fid =
     let prefix = "f_"
     in TLB.fromText prefix
         <> TLB.decimal fid
 
-renderFieldClause :: ExprPrinterType g -> FieldRef a -> g a -> Clause
-renderFieldClause p fr a =
-    let refName = printFieldRef fr
-        StatementBuilder (e, ps) = p Nothing Nothing $ a
-        eas = e <> TLB.fromText " AS " <> refName
+renderFieldClause :: StatementBuilder -> Ref a -> Clause
+renderFieldClause a (EntityRef eid) =
+    let alias = printFromAlias eid
+        a = alias <> TLB.fromText ".*"
+    in Clause . return . StatementBuilder $ (a, mempty)
+renderFieldClause a (FieldRef fid) =
+    let alias = printFieldAlias fid
+        StatementBuilder (e, ps) = a
+        eas = e <> TLB.fromText " AS " <> alias
     in Clause . return . StatementBuilder $ (eas, ps)
