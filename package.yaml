@@ -40,6 +40,8 @@ executables:
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N
+    - -Wall
+    - -fno-warn-unused-imports
     dependencies:
     - extensible-sql
     - persistent-template
@@ -52,6 +54,8 @@ tests:
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N
+    - -Wall
+    - -fno-warn-unused-imports
     dependencies:
     - conduit
     - containers

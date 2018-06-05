@@ -7,6 +7,10 @@ module Common
     , Customer(..)
     , Address(..)
     , Journey(..)
+    , DriverId
+    , CustomerId
+    , AddressId
+    , JourneyId
     ) where
 
 import Control.Monad.Trans.Reader (ReaderT)
@@ -27,6 +31,7 @@ import qualified Database.Persist.TH as Persist (mkPersist, mkMigrate, persistLo
 
 import ExSql.Printer.Types
 import ExSql.Printer.SelectQuery
+import ExSql.Syntax.Internal.Types
 import ExSql.Syntax.SelectQuery
 
 import Test.Hspec
@@ -91,7 +96,7 @@ runSelect query = do
 
 testSelect1 :: Run -> Spec
 testSelect1 run = it "select1" $ do
-    let query = selectFrom $ \(driver :: ExSql.Syntax.SelectQuery.Selector Ref (Persist.Entity Driver)) -> id
+    let query = selectFrom $ \(_ :: ExSql.Syntax.SelectQuery.Selector FieldRef (Persist.Entity Driver)) -> id
     r <- run $ do
         Persist.rawExecute "delete from driver" []
         _ <- Persist.insert driver1

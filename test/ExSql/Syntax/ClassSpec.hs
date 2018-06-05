@@ -20,7 +20,6 @@ import Test.Hspec
 newtype Printer (g :: * -> *) (v :: (* -> *) -> * -> *) = Printer { runPrinter :: forall a. v g a -> String }
 
 type Nodes = '[Literal, Arithmetic]
-type E = Expr Nodes Identity
 type Printers xs a = Printer (Expr xs Identity) :* xs
 
 ppArithmetic :: (forall b. Expr xs Identity b -> String) -> Arithmetic (Expr xs Identity) a -> String
@@ -31,8 +30,8 @@ ppArithmetic p (Multiplication a0 a1) = "(" `mappend` p a0 `mappend` "*" `mappen
 ppArithmetic p (Division a0 a1) = "(" `mappend` p a0 `mappend` "/" `mappend` p a1 `mappend` ")"
 
 ppLiteral :: (forall b. Expr Nodes Identity b -> String) -> Literal (Expr Nodes Identity) a -> String
-ppLiteral p (LitInt a) = show a
-ppLiteral p (LitBool a) = show a
+ppLiteral _ (LitInt a) = show a
+ppLiteral _ (LitBool a) = show a
 ppLiteral p (LitValueList a) = "(" `mappend` intercalate ", " xs `mappend` ")"
     where
     xs = map p (NonEmpty.toList a)
@@ -43,7 +42,7 @@ printers p = Printer (ppLiteral p)
     <: nil
 
 runPrinters :: Printer (Expr xs Identity) :* xs -> Expr xs Identity a -> String
-runPrinters printers (Expr (EmbedAt membership (Node (Identity a)))) = runPrinter (hindex printers membership) a
+runPrinters ps (Expr (EmbedAt membership (Node (Identity a)))) = runPrinter (hindex ps membership) a
 
 pp :: Expr Nodes Identity a -> String
 pp = runPrinters (printers pp)

@@ -3,6 +3,7 @@ module ExSql.Syntax.Literal
     ( Literal(..)
     , int
     , bool
+    , valueList
     ) where
 
 import Data.Extensible (Member)

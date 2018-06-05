@@ -15,7 +15,7 @@ import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Reader (ReaderT)
 import qualified Control.Monad.Trans.Reader as Reader (ask, runReaderT)
 import Control.Monad.Trans.State.Strict (State, StateT)
-import qualified Control.Monad.Trans.State.Strict as State (get, modify', put, evalStateT)
+import qualified Control.Monad.Trans.State.Strict as State (get, put, modify', put, evalStateT)
 import Control.Monad.Trans.Writer.Strict (Writer)
 import qualified Control.Monad.Trans.Writer.Strict as Writer (tell, runWriter)
 import Data.Foldable (fold)
@@ -52,10 +52,8 @@ newtype Clause = Clause (DList StatementBuilder)
 newtype OrderByClause = OrderByClause (DList (StatementBuilder, OrderType))
     deriving (Show, Semigroup, Monoid, Eq)
 
-data LimitClause = LimitClause
-    { lcOffset :: Maybe Int64
-    , lcLimit :: Maybe Int64
-    } deriving (Show, Eq)
+data LimitClause = LimitClause (Maybe Int64) (Maybe Int64)
+    deriving (Show, Eq)
 
 data SelectClauses = SelectClauses
     { scField :: !Clause
@@ -110,15 +108,16 @@ printWhereClause (Clause xs) = StatementBuilder (t, mconcat ps)
 
 printOrderByClause :: OrderByClause -> StatementBuilder
 printOrderByClause (OrderByClause DList.Nil) = mempty
-printOrderByClause (OrderByClause xs) = StatementBuilder (t, mconcat ps)
+printOrderByClause (OrderByClause xs) = StatementBuilder (tlb, mconcat ps)
     where
     ys = DList.toList xs
     ps = map (snd . unStatementBuilder . fst) $ ys
     ts = map (\(StatementBuilder (t, _), order) -> t <> TLB.fromText (showOrder order)) ys
-    t = TLB.fromText " ORDER BY " <> (mconcat . intersperse (TLB.fromText ", ") $ ts)
+    tlb = TLB.fromText " ORDER BY " <> (mconcat . intersperse (TLB.fromText ", ") $ ts)
     showOrder Asc = "ASC"
     showOrder Desc = "DESC"
 
+printLimitClause :: LimitClause -> StatementBuilder
 printLimitClause (LimitClause Nothing Nothing) = mempty
 printLimitClause (LimitClause (Just offset) Nothing) = StatementBuilder (TLB.fromText " OFFSET " <> TLB.decimal offset, mempty)
 printLimitClause (LimitClause Nothing (Just limit)) = StatementBuilder (TLB.fromText " LIMIT " <> TLB.decimal limit, mempty)
@@ -133,11 +132,11 @@ renderSelect p query = (convert, clauses)
 
 renderSelectClause :: ExprPrinterType g -> Syntax.SelectClause g -> SelectClauses
 renderSelectClause p (Syntax.Fields fs) = mempty { scField = renderSelectorFields p fs }
-renderSelectClause p (Syntax.From a) = mempty { scFrom = renderFrom p a }
+renderSelectClause _ (Syntax.From a) = mempty { scFrom = renderFrom a }
 renderSelectClause p (Syntax.Where w) = mempty { scWhere = Clause . return . p Nothing Nothing $ w }
 renderSelectClause p (Syntax.OrderBy a t) = mempty { scOrderBy = OrderByClause . return $ (p Nothing Nothing a, t) }
-renderSelectClause p (Syntax.Limit limit) = mempty { scLimit = LimitClause Nothing (Just limit) }
-renderSelectClause p (Syntax.Offset offset) = mempty { scLimit = LimitClause (Just offset) Nothing }
+renderSelectClause _ (Syntax.Limit limit) = mempty { scLimit = LimitClause Nothing (Just limit) }
+renderSelectClause _ (Syntax.Offset offset) = mempty { scLimit = LimitClause (Just offset) Nothing }
 renderSelectClause _ Syntax.Initial = mempty
 
 toProxy :: f a -> Proxy a
@@ -149,9 +148,12 @@ mkPersistConvert (Sel a) = do
         colNum = Persist.entityColumnCount def
     xs <- State.get
     (vals, rest) <- maybe (lift . Left $ "not enough input values") return (splitAtExactMay colNum xs)
+    State.put rest
     lift $ Persist.parseEntityValues def vals
 mkPersistConvert (f :$ _) = mkPersistConvertInternal f
 mkPersistConvert (s :* _) = mkPersistConvert s >>= mkPersistConvertInternal
+
+mkPersistConvertInternal :: (Persist.PersistField t) => (t -> a) -> PersistConvert a
 mkPersistConvertInternal f = do
     xs <- State.get
     (val, rest) <- maybe (lift . Left $ "not enough input values") return (uncons xs)
@@ -165,15 +167,15 @@ printFromAlias tid =
     in TLB.fromText prefix
         <> TLB.decimal tid
 
-renderFrom :: (Persist.PersistEntity record) => ExprPrinterType g -> Ref (Persist.Entity record) -> Clause
-renderFrom p ref @ (EntityRef eid) =
+renderFrom :: (Persist.PersistEntity record) => Ref (Persist.Entity record) -> Clause
+renderFrom ref @ (Ref eid) =
     let tableName = Persist.unDBName . Persist.entityDB . Persist.entityDef . fmap Persist.entityVal . toProxy $ ref
         alias = printFromAlias eid
         a = TLB.fromText tableName <> TLB.fromText " AS " <> alias
     in Clause . return . StatementBuilder $ (a, mempty)
 
-renderSelectorFields :: ExprPrinterType g -> Selector (Product g Ref) a -> Clause
-renderSelectorFields p (Sel ref) = renderFieldClause mempty ref
+renderSelectorFields :: ExprPrinterType g -> Selector (Product g FieldRef) a -> Clause
+renderSelectorFields _ (Sel ref) = renderFieldWildcard ref
 renderSelectorFields p (_ :$ Pair a ref) = renderFieldClause (p Nothing Nothing a) ref
 renderSelectorFields p (s :* Pair a ref) =
     renderSelectorFields p s <> renderFieldClause (p Nothing Nothing a) ref
@@ -184,11 +186,13 @@ printFieldAlias fid =
     in TLB.fromText prefix
         <> TLB.decimal fid
 
-renderFieldClause :: StatementBuilder -> Ref a -> Clause
-renderFieldClause a (EntityRef eid) =
+renderFieldWildcard :: Ref a -> Clause
+renderFieldWildcard (Ref eid) =
     let alias = printFromAlias eid
         a = alias <> TLB.fromText ".*"
     in Clause . return . StatementBuilder $ (a, mempty)
+
+renderFieldClause :: StatementBuilder -> FieldRef a -> Clause
 renderFieldClause a (FieldRef fid) =
     let alias = printFieldAlias fid
         StatementBuilder (e, ps) = a

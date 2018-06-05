@@ -41,7 +41,7 @@ sq1 :: SelectQuery Identity (Entity Person)
 sq1 = selectFrom $ \_ -> id
 
 sq2 :: SelectQuery E (Int, Text, Int)
-sq2 = selectFrom $ \(r :: ExSql.Syntax.SelectQuery.Selector Ref (Entity Person)) -> resultAs ((,,) :$ E 1 :* E "a" :* E 2) $ \_ -> id
+sq2 = selectFrom $ \(_ :: ExSql.Syntax.SelectQuery.Selector FieldRef (Entity Person)) -> resultAs ((,,) :$ E 1 :* E "a" :* E 2) $ \_ -> id
 
 spec :: Spec
 spec = describe "SelectQuery" $ do

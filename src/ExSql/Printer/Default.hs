@@ -5,6 +5,7 @@ module ExSql.Printer.Default
     , printLiteral
     , printArithmetic
     , printColumn
+    , printSubSelect
     , printComparison
     , printFunction
     , printIn
@@ -157,7 +158,7 @@ printFunction p _ _ (Function6 fname a0 a1 a2 a3 a4 a5) =
     printFun fname [p Nothing Nothing a0, p Nothing Nothing a1, p Nothing Nothing a2, p Nothing Nothing a3, p Nothing Nothing a4, p Nothing Nothing a5]
 
 printColumn :: ExprPrinterType (Expr xs Identity) -> PrinterType (Expr xs Identity) Column a
-printColumn p l r (Column (FieldRef tid) col) =
+printColumn _ l r (Column (FieldRef tid) col) =
     let c = Relativity (Precedence 3) LeftToRight
         prefix = "t_"
         columnName = Persist.unDBName . Persist.fieldDBName $ col
@@ -169,6 +170,9 @@ printColumn p l r (Column (FieldRef tid) col) =
 
 printSubSelect :: ExprPrinterType (Expr xs Identity) -> PrinterType (Expr xs Identity) SubSelect a
 printSubSelect p _ _ (SubSelect query) =
+    let StatementBuilder (t, ps) = printSelect p query
+    in StatementBuilder (addBracket t, ps)
+printSubSelect p _ _ (SubSelectValues query) =
     let StatementBuilder (t, ps) = printSelect p query
     in StatementBuilder (addBracket t, ps)
 
@@ -186,7 +190,7 @@ needBracket :: Maybe Relativity -> Relativity -> Maybe Relativity -> Bool
 needBracket l c r = needBracketL c r || needBracketR l c
 
 needBracketL :: Relativity -> Maybe Relativity -> Bool
-needBracketL (Relativity p a) (Just (Relativity rp ra))
+needBracketL (Relativity p a) (Just (Relativity rp _))
     | p > rp = True
     | a == NonAssociative = True
     | p == rp && a == LeftToRight = True
@@ -194,7 +198,7 @@ needBracketL (Relativity p a) (Just (Relativity rp ra))
 needBracketL _ _ = False
 
 needBracketR :: Maybe Relativity -> Relativity -> Bool
-needBracketR (Just (Relativity lp la)) (Relativity p a)
+needBracketR (Just (Relativity lp _)) (Relativity p a)
     | p > lp = True
     | a == NonAssociative = True
     | p == lp && a == RightToLeft = True

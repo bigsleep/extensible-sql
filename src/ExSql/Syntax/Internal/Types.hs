@@ -1,8 +1,9 @@
 {-# LANGUAGE GADTs #-}
 module ExSql.Syntax.Internal.Types
-    ( Ref(..)
-    , ValueList
+    ( ValueList
     , PersistConvert
+    , Ref(..)
+    , FieldRef(..)
     ) where
 
 import Control.Monad
@@ -10,9 +11,11 @@ import Control.Monad.Trans.State.Strict (StateT)
 import Data.Text (Text)
 import Database.Persist (Entity, PersistEntity(..), PersistField(..), PersistValue(..))
 
-data Ref a where
-    EntityRef :: (PersistEntity record) => Int -> Ref (Entity record)
-    FieldRef :: (PersistField field) => Int -> Ref field
+newtype Ref a = Ref Int
+    deriving (Show, Eq)
+
+newtype FieldRef a = FieldRef Int
+    deriving (Show, Eq)
 
 data ValueList a
 
