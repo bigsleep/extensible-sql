@@ -1,4 +1,6 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE
+    OverloadedStrings
+#-}
 module PostgreSQLSpec
     ( spec
     ) where

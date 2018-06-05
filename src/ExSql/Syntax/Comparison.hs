@@ -1,4 +1,8 @@
-{-# LANGUAGE GADTs, RankNTypes, FlexibleContexts #-}
+{-# LANGUAGE
+    FlexibleContexts,
+    GADTs,
+    RankNTypes
+#-}
 module ExSql.Syntax.Comparison
     ( Comparison(..)
     , equality

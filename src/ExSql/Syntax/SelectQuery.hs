@@ -1,4 +1,12 @@
-{-# LANGUAGE GADTs, GeneralizedNewtypeDeriving, RankNTypes, FlexibleContexts, KindSignatures, PatternSynonyms, ScopedTypeVariables #-}
+{-# LANGUAGE
+    FlexibleContexts,
+    GADTs,
+    GeneralizedNewtypeDeriving,
+    KindSignatures,
+    PatternSynonyms,
+    RankNTypes,
+    ScopedTypeVariables
+#-}
 module ExSql.Syntax.SelectQuery
     ( SelectQuery(..)
     , Selector(..)

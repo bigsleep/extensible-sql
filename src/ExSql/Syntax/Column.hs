@@ -1,4 +1,8 @@
-{-# LANGUAGE KindSignatures, GADTs, FlexibleContexts #-}
+{-# LANGUAGE
+    FlexibleContexts,
+    GADTs,
+    KindSignatures
+#-}
 module ExSql.Syntax.Column
     ( Column(..)
     , column

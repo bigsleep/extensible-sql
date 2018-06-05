@@ -1,4 +1,9 @@
-{-# LANGUAGE OverloadedStrings, RankNTypes, GADTs, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE
+    GADTs,
+    GeneralizedNewtypeDeriving,
+    OverloadedStrings,
+    RankNTypes
+#-}
 module ExSql.Printer.SelectQuery
     ( SelectResult
     , Clause(..)

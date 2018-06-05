@@ -1,4 +1,12 @@
-{-# LANGUAGE DataKinds, ConstraintKinds, TypeFamilies, RankNTypes, FlexibleContexts, TypeOperators, GADTs #-}
+{-# LANGUAGE
+    ConstraintKinds,
+    DataKinds,
+    FlexibleContexts,
+    GADTs,
+    RankNTypes,
+    TypeFamilies,
+    TypeOperators
+#-}
 module ExSql.Syntax.Class
     ( Ast(..)
     , Hoist(..)

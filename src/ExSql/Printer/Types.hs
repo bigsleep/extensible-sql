@@ -1,4 +1,7 @@
-{-# LANGUAGE KindSignatures, RankNTypes #-}
+{-# LANGUAGE
+    KindSignatures,
+    RankNTypes
+#-}
 module ExSql.Printer.Types
     ( ExprPrinterType
     , PrinterType

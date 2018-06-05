@@ -1,4 +1,10 @@
-{-# LANGUAGE OverloadedStrings, TypeOperators, GADTs, RankNTypes, KindSignatures #-}
+{-# LANGUAGE
+    GADTs,
+    KindSignatures,
+    OverloadedStrings,
+    RankNTypes,
+    TypeOperators
+#-}
 module ExSql.Printer.Default
     ( Printer(..)
     , printExpr

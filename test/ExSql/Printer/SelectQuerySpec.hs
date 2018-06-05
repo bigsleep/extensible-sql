@@ -1,4 +1,17 @@
-{-# LANGUAGE OverloadedStrings, DataKinds, FlexibleContexts, GADTs, GeneralizedNewtypeDeriving, RankNTypes, TypeFamilies, TypeOperators, MultiParamTypeClasses, ScopedTypeVariables, QuasiQuotes, TemplateHaskell #-}
+{-# LANGUAGE
+    DataKinds,
+    FlexibleContexts,
+    GADTs,
+    GeneralizedNewtypeDeriving,
+    MultiParamTypeClasses,
+    OverloadedStrings,
+    QuasiQuotes,
+    RankNTypes,
+    ScopedTypeVariables,
+    TemplateHaskell,
+    TypeFamilies,
+    TypeOperators
+#-}
 module ExSql.Printer.SelectQuerySpec
     ( spec
     ) where

@@ -1,4 +1,11 @@
-{-# LANGUAGE DataKinds, FlexibleContexts, GADTs, KindSignatures, RankNTypes, TypeOperators #-}
+{-# LANGUAGE
+    DataKinds,
+    FlexibleContexts,
+    GADTs,
+    KindSignatures,
+    RankNTypes,
+    TypeOperators
+#-}
 module ExSql.Syntax.ClassSpec
     ( spec
     ) where

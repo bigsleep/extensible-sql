@@ -1,4 +1,18 @@
-{-# LANGUAGE OverloadedStrings, DataKinds, FlexibleContexts, GADTs, GeneralizedNewtypeDeriving, KindSignatures, MultiParamTypeClasses, RankNTypes, TypeFamilies, TypeOperators, QuasiQuotes, TemplateHaskell, ScopedTypeVariables #-}
+{-# LANGUAGE
+    DataKinds,
+    FlexibleContexts,
+    GADTs,
+    GeneralizedNewtypeDeriving,
+    KindSignatures,
+    MultiParamTypeClasses,
+    OverloadedStrings,
+    QuasiQuotes,
+    RankNTypes,
+    ScopedTypeVariables,
+    TemplateHaskell,
+    TypeFamilies,
+    TypeOperators
+#-}
 module Common
     ( migrateAll
     , tests
