@@ -35,11 +35,11 @@ import ExSql.Printer.Common
 import ExSql.Printer.SelectQuery
 import ExSql.Printer.Types
 
-import Test.Hspec
+import Test.Hspec hiding (Selector)
 
 Persist.share [Persist.mkPersist Persist.sqlSettings] [Persist.persistLowerCase|
 Person
-    name String
+    name Text
     age Int
     deriving Show
 |]
@@ -63,10 +63,10 @@ sq1 :: SelectQuery Identity (Entity Person)
 sq1 = selectFrom $ \_ -> id
 
 sq2 :: SelectQuery E (Int, Text, Int)
-sq2 = selectFrom $ \(_ :: ExSql.Syntax.SelectQuery.Selector FieldRef (Entity Person)) -> resultAs ((,,) :$ Lit 1 :* Lit "a" :* Lit 2) $ \_ -> id
+sq2 = selectFrom $ \(_ :: Selector FieldRef (Entity Person)) -> resultAs ((,,) :$ Lit 1 :* Lit "a" :* Lit 2) $ \_ -> id
 
-sq3 :: SelectQuery E (String, Int)
-sq3 = selectFrom $ \(Sel (ref) :: ExSql.Syntax.SelectQuery.Selector FieldRef (Entity Person)) ->
+sq3 :: SelectQuery E (Text, Int)
+sq3 = selectFrom $ \(Sel ref :: Selector FieldRef (Entity Person)) ->
         resultAs ((,) :$ Col ref PersonName :* Col ref PersonAge) $
             \(_ :$ f1 :* _) -> orderBy (F f1) Asc
 
