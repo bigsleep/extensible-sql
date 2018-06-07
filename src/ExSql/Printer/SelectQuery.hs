@@ -7,6 +7,7 @@
 module ExSql.Printer.SelectQuery
     ( SelectResult
     , Clause(..)
+    , OrderByClause(..)
     , SelectClauses(..)
     , renderSelect
     , printFromAlias

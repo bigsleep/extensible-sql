@@ -23,13 +23,15 @@ import Data.Text (Text)
 import qualified Data.Text as Text (unpack)
 import qualified Data.Text.Lazy.Builder as TLB
 import Data.Functor.Identity (Identity(..))
-import Database.Persist (Entity, PersistValue(..))
+import Database.Persist (DBName(..), Entity, PersistEntity(..), PersistValue(..))
 import Database.Persist.Class (PersistField(..))
+import Database.Persist.Sql (fieldDBName)
 import qualified Database.Persist.TH as Persist (mkPersist, persistLowerCase, share, sqlSettings)
 
 import ExSql.Syntax.SelectQuery
 import ExSql.Syntax.Relativity
 import ExSql.Syntax.Internal.Types
+import ExSql.Printer.Common
 import ExSql.Printer.SelectQuery
 import ExSql.Printer.Types
 
@@ -43,18 +45,30 @@ Person
 |]
 
 data E a where
-    E :: (PersistField a) => a -> E a
+    Lit :: (PersistField a) => a -> E a
+    Col :: (PersistEntity record) => Ref (Entity record) -> EntityField record a -> E a
+    F :: (PersistField a) => FieldRef a -> E a
 
 pe :: ExprPrinterType E
-pe _ _ (E a) =
+pe _ _ (Lit a) =
     let v = toPersistValue a
     in StatementBuilder (TLB.singleton '?', return v)
+pe _ _ (Col (Ref tid) col) =
+    let columnName = unDBName . fieldDBName $ col
+        x = printFromAlias tid `mappend` TLB.singleton '.' `mappend` TLB.fromText columnName
+    in StatementBuilder (x, mempty)
+pe _ _ (F (FieldRef fid)) = StatementBuilder (printFieldAlias fid, mempty)
 
 sq1 :: SelectQuery Identity (Entity Person)
 sq1 = selectFrom $ \_ -> id
 
 sq2 :: SelectQuery E (Int, Text, Int)
-sq2 = selectFrom $ \(_ :: ExSql.Syntax.SelectQuery.Selector FieldRef (Entity Person)) -> resultAs ((,,) :$ E 1 :* E "a" :* E 2) $ \_ -> id
+sq2 = selectFrom $ \(_ :: ExSql.Syntax.SelectQuery.Selector FieldRef (Entity Person)) -> resultAs ((,,) :$ Lit 1 :* Lit "a" :* Lit 2) $ \_ -> id
+
+sq3 :: SelectQuery E (String, Int)
+sq3 = selectFrom $ \(Sel (ref) :: ExSql.Syntax.SelectQuery.Selector FieldRef (Entity Person)) ->
+        resultAs ((,) :$ Col ref PersonName :* Col ref PersonAge) $
+            \(_ :$ f1 :* _) -> orderBy (F f1) Asc
 
 spec :: Spec
 spec = describe "SelectQuery" $ do
@@ -74,3 +88,16 @@ spec = describe "SelectQuery" $ do
                 }
         r `shouldBe` expected
         State.runStateT convert [PersistInt64 1, PersistText "a", PersistInt64 2] `shouldBe` Right ((1, "a", 2), [])
+
+    it "field ref" $ do
+        let (convert, r) = renderSelect pe sq3
+            expected = mempty
+                { scField = Clause . DList.fromList $
+                    [ StatementBuilder ("t_0.name AS f_0", mempty)
+                    , StatementBuilder ("t_0.age AS f_1", mempty)
+                    ]
+                , scFrom = Clause . return $ StatementBuilder ("person AS t_0", mempty)
+                , scOrderBy = OrderByClause . return $ (StatementBuilder ("f_0", mempty), Asc)
+                }
+        r `shouldBe` expected
+        State.runStateT convert [PersistText "abc", PersistInt64 2] `shouldBe` Right (("abc", 2), [])
