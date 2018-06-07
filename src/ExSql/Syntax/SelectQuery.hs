@@ -34,14 +34,14 @@ import Data.Proxy (Proxy(..))
 import Data.Semigroup (Semigroup(..))
 import Database.Persist (Entity(..), PersistEntity(..), PersistField(..))
 import ExSql.Syntax.Class
-import ExSql.Syntax.Internal.Types (Ref(..), FieldRef(..), PersistConvert)
+import ExSql.Syntax.Internal.Types (Ref(..), FieldAlias(..), FieldRef(..), PersistConvert)
 
 newtype SelectQuery (g :: * -> *) a = SelectQuery
     { unSelectQuery :: StateT (Int, Int) (Writer (SelectClauses g)) (Selector FieldRef a)
     }
 
 data SelectClause (g :: * -> *) where
-    Fields :: Selector (Product g FieldRef) a -> SelectClause g
+    Fields :: Selector (Product g FieldAlias) a -> SelectClause g
     From :: (PersistEntity record) => Ref (Entity record) -> SelectClause g
     Where :: g Bool -> SelectClause g
     OrderBy :: g b -> OrderType -> SelectClause g
@@ -80,17 +80,20 @@ selectFrom f = SelectQuery $ do
 resultAs :: Selector g b -> (Selector FieldRef b -> SelectQuery g b -> SelectQuery g a) -> SelectQuery g c -> SelectQuery g a
 resultAs selector cont (SelectQuery pre) = SelectQuery $ do
     _ <- pre
-    selectorWithRef <- mkRef selector
-    lift . Writer.tell . SelectClauses . return $ Fields selectorWithRef
-    let ref = hoist (\(Pair _ a) -> a) selectorWithRef
+    selectorWithAlias <- mkRef selector
+    lift . Writer.tell . SelectClauses . return $ Fields selectorWithAlias
+    let ref = hoist (\(Pair _ a) -> aliasToRef a) selectorWithAlias
     unSelectQuery . cont ref . SelectQuery . return $ ref
 
     where
     mkRef s = do
         (i, j) <- State.get
-        let (selectorWithRef, next) = mkSelectorRef j s
+        let (selectorWithAlias, next) = mkSelectorFieldAlias j s
         State.put (i, next)
-        return selectorWithRef
+        return selectorWithAlias
+
+    aliasToRef :: FieldAlias a -> FieldRef a
+    aliasToRef (FieldAlias a) = FieldRef a
 
 where_ :: g Bool -> SelectQuery g a -> SelectQuery g a
 where_ a (SelectQuery q) = SelectQuery $ do
@@ -128,12 +131,12 @@ instance Hoist Selector where
     hoist f (g :$ a) = g :$ (f a)
     hoist f (s :* a) = (hoist f s) :* (f a)
 
-mkSelectorRef :: Int -> Selector g a -> (Selector (Product g FieldRef) a, Int)
-mkSelectorRef i (Sel a) = (Sel a, i)
-mkSelectorRef i (f :$ a) = (f :$ Pair a (toFieldRef i a), i + 1)
-mkSelectorRef i (s :* a) =
-    let (r, next) = mkSelectorRef i s
-    in (r :* Pair a (toFieldRef next a), next + 1)
+mkSelectorFieldAlias :: Int -> Selector g a -> (Selector (Product g FieldAlias) a, Int)
+mkSelectorFieldAlias i (Sel a) = (Sel a, i)
+mkSelectorFieldAlias i (f :$ a) = (f :$ Pair a (toFieldAlias i a), i + 1)
+mkSelectorFieldAlias i (s :* a) =
+    let (r, next) = mkSelectorFieldAlias i s
+    in (r :* Pair a (toFieldAlias next a), next + 1)
 
-toFieldRef :: (PersistField a) => Int -> g a -> FieldRef a
-toFieldRef index _ = FieldRef index
+toFieldAlias :: (PersistField a) => Int -> g a -> FieldAlias a
+toFieldAlias index _ = FieldAlias index

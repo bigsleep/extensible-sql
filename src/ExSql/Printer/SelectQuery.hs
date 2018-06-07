@@ -179,11 +179,11 @@ renderFrom ref @ (Ref eid) =
         a = TLB.fromText tableName <> TLB.fromText " AS " <> alias
     in Clause . return . StatementBuilder $ (a, mempty)
 
-renderSelectorFields :: ExprPrinterType g -> Selector (Product g FieldRef) a -> Clause
+renderSelectorFields :: ExprPrinterType g -> Selector (Product g FieldAlias) a -> Clause
 renderSelectorFields _ (Sel ref) = renderFieldWildcard ref
-renderSelectorFields p (_ :$ Pair a ref) = renderFieldClause (p Nothing Nothing a) ref
-renderSelectorFields p (s :* Pair a ref) =
-    renderSelectorFields p s <> renderFieldClause (p Nothing Nothing a) ref
+renderSelectorFields p (_ :$ Pair a alias) = renderFieldClause (p Nothing Nothing a) alias
+renderSelectorFields p (s :* Pair a alias) =
+    renderSelectorFields p s <> renderFieldClause (p Nothing Nothing a) alias
 
 printFieldAlias :: Int -> TLB.Builder
 printFieldAlias fid =
@@ -197,8 +197,8 @@ renderFieldWildcard (Ref eid) =
         a = alias <> TLB.fromText ".*"
     in Clause . return . StatementBuilder $ (a, mempty)
 
-renderFieldClause :: StatementBuilder -> FieldRef a -> Clause
-renderFieldClause a (FieldRef fid) =
+renderFieldClause :: StatementBuilder -> FieldAlias a -> Clause
+renderFieldClause a (FieldAlias fid) =
     let alias = printFieldAlias fid
         StatementBuilder (e, ps) = a
         eas = e <> TLB.fromText " AS " <> alias

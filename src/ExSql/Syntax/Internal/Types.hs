@@ -3,6 +3,7 @@ module ExSql.Syntax.Internal.Types
     ( ValueList
     , PersistConvert
     , Ref(..)
+    , FieldAlias(..)
     , FieldRef(..)
     ) where
 
@@ -15,6 +16,9 @@ newtype Ref a = Ref Int
     deriving (Show, Eq)
 
 newtype FieldRef a = FieldRef Int
+    deriving (Show, Eq)
+
+newtype FieldAlias a = FieldAlias Int
     deriving (Show, Eq)
 
 data ValueList a
