@@ -11,6 +11,7 @@ module ExSql.Printer.Default
     , printLiteral
     , printArithmetic
     , printColumn
+    , printField
     , printSubSelect
     , printComparison
     , printFunction
@@ -33,6 +34,7 @@ import Database.Persist (PersistValue(..))
 import qualified Database.Persist as Persist (DBName(..))
 import qualified Database.Persist.Sql as Persist (fieldDBName)
 
+import ExSql.Printer.Common
 import ExSql.Printer.Types (Printer(..), PrinterType, ExprPrinterType, StatementBuilder(..))
 import ExSql.Printer.SelectQuery
 import ExSql.Syntax.Class (Expr(..), Node(..))
@@ -40,6 +42,7 @@ import ExSql.Syntax.Relativity (Relativity(..), Precedence(..), Associativity(..
 import ExSql.Syntax.Arithmetic
 import ExSql.Syntax.Column
 import ExSql.Syntax.Comparison
+import ExSql.Syntax.Field
 import ExSql.Syntax.Function
 import ExSql.Syntax.In
 import ExSql.Syntax.Literal
@@ -164,15 +167,22 @@ printFunction p _ _ (Function6 fname a0 a1 a2 a3 a4 a5) =
     printFun fname [p Nothing Nothing a0, p Nothing Nothing a1, p Nothing Nothing a2, p Nothing Nothing a3, p Nothing Nothing a4, p Nothing Nothing a5]
 
 printColumn :: ExprPrinterType (Expr xs Identity) -> PrinterType (Expr xs Identity) Column a
-printColumn _ l r (Column (FieldRef tid) col) =
-    let c = Relativity (Precedence 3) LeftToRight
-        prefix = "t_"
-        columnName = Persist.unDBName . Persist.fieldDBName $ col
-        x = TLB.fromText prefix
-            `mappend` TLB.decimal tid
-            `mappend` TLB.singleton '.'
-            `mappend` TLB.fromText columnName
-    in StatementBuilder (handleBracket l c r x, mempty)
+printColumn _ l r (Column (Ref tid) col) =
+    StatementBuilder (handleBracket l c r x, mempty)
+    where
+    c = Relativity (Precedence 3) LeftToRight
+    columnName = Persist.unDBName . Persist.fieldDBName $ col
+    x = printFromAlias tid
+        `mappend` TLB.singleton '.'
+        `mappend` TLB.fromText columnName
+
+printField :: ExprPrinterType (Expr xs Identity) -> PrinterType (Expr xs Identity) Field a
+printField _ _ _ (Field (FieldRef fid)) = StatementBuilder (printFieldAlias fid, mempty)
+printField _ l r (Field (QualifiedFieldRef tid fid)) =
+    StatementBuilder (handleBracket l c r x, mempty)
+    where
+    c = Relativity (Precedence 3) LeftToRight
+    x = printFromAlias tid `mappend` printFieldAlias fid
 
 printSubSelect :: ExprPrinterType (Expr xs Identity) -> PrinterType (Expr xs Identity) SubSelect a
 printSubSelect p _ _ (SubSelect query) =

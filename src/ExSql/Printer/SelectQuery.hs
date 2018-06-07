@@ -42,6 +42,7 @@ import qualified Database.Persist.Sql as Persist (tableDBName)
 import qualified Database.Persist.Sql.Util as Persist (entityColumnCount, parseEntityValues)
 import Safe.Exact (splitAtExactMay)
 
+import ExSql.Printer.Common
 import ExSql.Printer.Types
 import ExSql.Syntax.Class
 import ExSql.Syntax.Relativity
@@ -166,12 +167,6 @@ mkPersistConvertInternal f = do
     r <- lift . Persist.fromPersistValue $ val
     return (f r)
 
-printFromAlias :: Int -> TLB.Builder
-printFromAlias tid =
-    let prefix = "t_"
-    in TLB.fromText prefix
-        <> TLB.decimal tid
-
 renderFrom :: (Persist.PersistEntity record) => Ref (Persist.Entity record) -> Clause
 renderFrom ref @ (Ref eid) =
     let tableName = Persist.unDBName . Persist.entityDB . Persist.entityDef . fmap Persist.entityVal . toProxy $ ref
@@ -184,12 +179,6 @@ renderSelectorFields _ (Sel ref) = renderFieldWildcard ref
 renderSelectorFields p (_ :$ Pair a alias) = renderFieldClause (p Nothing Nothing a) alias
 renderSelectorFields p (s :* Pair a alias) =
     renderSelectorFields p s <> renderFieldClause (p Nothing Nothing a) alias
-
-printFieldAlias :: Int -> TLB.Builder
-printFieldAlias fid =
-    let prefix = "f_"
-    in TLB.fromText prefix
-        <> TLB.decimal fid
 
 renderFieldWildcard :: Ref a -> Clause
 renderFieldWildcard (Ref eid) =

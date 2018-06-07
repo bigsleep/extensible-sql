@@ -15,7 +15,7 @@ import Database.Persist (Entity, PersistEntity(..), PersistField(..), PersistVal
 newtype Ref a = Ref Int
     deriving (Show, Eq)
 
-newtype FieldRef a = FieldRef Int
+data FieldRef a = FieldRef Int | QualifiedFieldRef Int Int
     deriving (Show, Eq)
 
 newtype FieldAlias a = FieldAlias Int
