@@ -15,6 +15,7 @@ module ExSql.Syntax.SelectQuery
     , OrderType(..)
     , Ref
     , selectFrom
+    , selectFromSub
     , resultAs
     , where_
     , orderBy
@@ -24,9 +25,9 @@ module ExSql.Syntax.SelectQuery
 
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.State.Strict (StateT)
-import qualified Control.Monad.Trans.State.Strict as State (get, put, mapStateT)
+import qualified Control.Monad.Trans.State.Strict as State (evalStateT, get, put, mapStateT)
 import Control.Monad.Trans.Writer.Strict (Writer)
-import qualified Control.Monad.Trans.Writer.Strict as Writer (tell, mapWriter)
+import qualified Control.Monad.Trans.Writer.Strict as Writer (tell, mapWriter, runWriter)
 import Data.Int (Int64)
 import Data.DList (DList)
 import Data.Functor.Product (Product(..))
@@ -43,6 +44,7 @@ newtype SelectQuery (g :: * -> *) a = SelectQuery
 data SelectClause (g :: * -> *) where
     Fields :: Selector (Product g FieldAlias) a -> SelectClause g
     From :: (PersistEntity record) => Ref (Entity record) -> SelectClause g
+    FromSub :: Int -> SelectQuery g a -> SelectClause g
     Where :: g Bool -> SelectClause g
     OrderBy :: g b -> OrderType -> SelectClause g
     Limit :: Int64 -> SelectClause g
@@ -60,6 +62,7 @@ instance Hoist SelectQuery where
 hoist' :: (forall x. m x -> n x) -> SelectClause m -> SelectClause n
 hoist' f (Fields a) = Fields (hoist (\(Pair x y) -> Pair (f x) y) a)
 hoist' _ (From a) = From a
+hoist' f (FromSub i a) = FromSub i (hoist f a)
 hoist' f (Where a) = Where (f a)
 hoist' f (OrderBy a t) = OrderBy (f a) t
 hoist' _ (Limit a) = Limit a
@@ -76,6 +79,15 @@ selectFrom f = SelectQuery $ do
         sref = Sel ref
     lift . Writer.tell . SelectClauses . return . From $ ref
     unSelectQuery . f sref . SelectQuery . return $ sref
+
+selectFromSub :: SelectQuery g b -> (Selector FieldRef b -> SelectQuery g b -> SelectQuery g a) -> SelectQuery g a
+selectFromSub sub f = SelectQuery $ do
+    (i, j) <- State.get
+    State.put (i + 1, j)
+    let (sref, _) = Writer.runWriter . flip State.evalStateT (0, 0) . unSelectQuery $ sub
+        qref = qualifySelectorFieldRef i sref
+    lift . Writer.tell . SelectClauses . return . FromSub i $ sub
+    unSelectQuery . f qref . SelectQuery . return $ qref
 
 resultAs :: Selector g b -> (Selector FieldRef b -> SelectQuery g b -> SelectQuery g a) -> SelectQuery g c -> SelectQuery g a
 resultAs selector cont (SelectQuery pre) = SelectQuery $ do
@@ -137,6 +149,15 @@ mkSelectorFieldAlias i (f :$ a) = (f :$ Pair a (toFieldAlias i a), i + 1)
 mkSelectorFieldAlias i (s :* a) =
     let (r, next) = mkSelectorFieldAlias i s
     in (r :* Pair a (toFieldAlias next a), next + 1)
+
+qualifySelectorFieldRef :: Int -> Selector FieldRef a -> Selector FieldRef a
+qualifySelectorFieldRef tid (Sel (Ref _)) = Sel (Ref tid)
+qualifySelectorFieldRef tid (f :$ a) = f :$ qualifyFieldRef tid a
+qualifySelectorFieldRef tid (s :* a) = qualifySelectorFieldRef tid s :* qualifyFieldRef tid a
+
+qualifyFieldRef :: Int -> FieldRef a -> FieldRef a
+qualifyFieldRef tid (FieldRef fid) = QualifiedFieldRef tid fid
+qualifyFieldRef tid (QualifiedFieldRef _ fid) = QualifiedFieldRef tid fid
 
 toFieldAlias :: (PersistField a) => Int -> g a -> FieldAlias a
 toFieldAlias index _ = FieldAlias index

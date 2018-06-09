@@ -5,8 +5,7 @@
     RankNTypes
 #-}
 module ExSql.Printer.SelectQuery
-    ( SelectResult
-    , Clause(..)
+    ( Clause(..)
     , OrderByClause(..)
     , SelectClauses(..)
     , renderSelect
@@ -50,8 +49,6 @@ import ExSql.Syntax.Relativity
 import ExSql.Syntax.SelectQuery (SelectQuery(..), Selector(..), OrderType(..))
 import qualified ExSql.Syntax.SelectQuery as Syntax
 import ExSql.Syntax.Internal.Types
-
-type SelectResult a = StateT (Int, Int) (Writer SelectClauses) (PersistConvert a)
 
 newtype Clause = Clause (DList StatementBuilder)
     deriving (Show, Semigroup, Monoid, Eq)
@@ -119,7 +116,7 @@ printOrderByClause (OrderByClause xs) = StatementBuilder (tlb, mconcat ps)
     where
     ys = DList.toList xs
     ps = map (snd . unStatementBuilder . fst) $ ys
-    ts = map (\(StatementBuilder (t, _), order) -> t <> TLB.fromText (showOrder order)) ys
+    ts = map (\(StatementBuilder (t, _), order) -> t <> TLB.singleton ' ' <> TLB.fromText (showOrder order)) ys
     tlb = TLB.fromText " ORDER BY " <> (mconcat . intersperse (TLB.fromText ", ") $ ts)
     showOrder Asc = "ASC"
     showOrder Desc = "DESC"
@@ -140,6 +137,7 @@ renderSelect p query = (convert, clauses)
 renderSelectClause :: ExprPrinterType g -> Syntax.SelectClause g -> SelectClauses
 renderSelectClause p (Syntax.Fields fs) = mempty { scField = renderSelectorFields p fs }
 renderSelectClause _ (Syntax.From a) = mempty { scFrom = renderFrom a }
+renderSelectClause p (Syntax.FromSub i q) = mempty { scFrom = renderFromSub p i q }
 renderSelectClause p (Syntax.Where w) = mempty { scWhere = Clause . return . p Nothing Nothing $ w }
 renderSelectClause p (Syntax.OrderBy a t) = mempty { scOrderBy = OrderByClause . return $ (p Nothing Nothing a, t) }
 renderSelectClause _ (Syntax.Limit limit) = mempty { scLimit = LimitClause Nothing (Just limit) }
@@ -174,6 +172,13 @@ renderFrom ref @ (Ref eid) =
         alias = printFromAlias eid
         a = TLB.fromText tableName <> TLB.fromText " AS " <> alias
     in Clause . return . StatementBuilder $ (a, mempty)
+
+renderFromSub :: ExprPrinterType g -> Int -> SelectQuery g a -> Clause
+renderFromSub p tid query =
+    let alias = printFromAlias tid
+        StatementBuilder (t, ps) = printSelect p query
+        a = addBracket t <> TLB.fromText " AS " <> alias
+    in Clause . return . StatementBuilder $ (a, ps)
 
 renderSelectorFields :: ExprPrinterType g -> Selector (Product g FieldAlias) a -> Clause
 renderSelectorFields _ (Sel ref) = renderFieldWildcard ref

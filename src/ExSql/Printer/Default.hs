@@ -191,32 +191,3 @@ printSubSelect p _ _ (SubSelect query) =
 printSubSelect p _ _ (SubSelectValues query) =
     let StatementBuilder (t, ps) = printSelect p query
     in StatementBuilder (addBracket t, ps)
-
-addBracket :: TLB.Builder -> TLB.Builder
-addBracket a = TLB.singleton '('
-    `mappend` a
-    `mappend` TLB.singleton ')'
-
-handleBracket :: Maybe Relativity -> Relativity -> Maybe Relativity -> TLB.Builder -> TLB.Builder
-handleBracket l c r s = if needBracket l c r
-    then addBracket s
-    else s
-
-needBracket :: Maybe Relativity -> Relativity -> Maybe Relativity -> Bool
-needBracket l c r = needBracketL c r || needBracketR l c
-
-needBracketL :: Relativity -> Maybe Relativity -> Bool
-needBracketL (Relativity p a) (Just (Relativity rp _))
-    | p > rp = True
-    | a == NonAssociative = True
-    | p == rp && a == LeftToRight = True
-    | otherwise = False
-needBracketL _ _ = False
-
-needBracketR :: Maybe Relativity -> Relativity -> Bool
-needBracketR (Just (Relativity lp _)) (Relativity p a)
-    | p > lp = True
-    | a == NonAssociative = True
-    | p == lp && a == RightToLeft = True
-    | otherwise = False
-needBracketR _ _ = False
