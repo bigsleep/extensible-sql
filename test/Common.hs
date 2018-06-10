@@ -100,7 +100,7 @@ pe _ _ (E a) =
     let v = Persist.toPersistValue a
     in StatementBuilder (TLB.singleton '?', return v)
 
-runSelect :: SelectQuery E a -> ReaderT Persist.SqlBackend (NoLoggingT (ResourceT IO)) (Either Text [a])
+runSelect :: SelectQuery c E a -> ReaderT Persist.SqlBackend (NoLoggingT (ResourceT IO)) (Either Text [a])
 runSelect query = do
     let (convert, sc) = renderSelect pe query
         StatementBuilder (tlb, ps) = printSelectClauses sc
@@ -110,7 +110,7 @@ runSelect query = do
 
 testSelect1 :: Run -> Spec
 testSelect1 run = it "select1" $ do
-    let query = selectFrom $ \(_ :: ExSql.Syntax.SelectQuery.Selector FieldRef (Persist.Entity Driver)) -> id
+    let query = selectFrom $ \(_ :: ExSql.Syntax.SelectQuery.Selector () FieldRef (Persist.Entity Driver)) -> id
     r <- run $ do
         Persist.rawExecute "delete from driver" []
         _ <- Persist.insert driver1

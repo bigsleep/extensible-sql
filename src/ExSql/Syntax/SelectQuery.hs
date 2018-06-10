@@ -37,14 +37,14 @@ import Database.Persist (Entity(..), PersistEntity(..), PersistField(..))
 import ExSql.Syntax.Class
 import ExSql.Syntax.Internal.Types (Ref(..), FieldAlias(..), FieldRef(..), PersistConvert)
 
-newtype SelectQuery (g :: * -> *) a = SelectQuery
-    { unSelectQuery :: StateT (Int, Int) (Writer (SelectClauses g)) (Selector FieldRef a)
+newtype SelectQuery c (g :: * -> *) a = SelectQuery
+    { unSelectQuery :: StateT (Int, Int) (Writer (SelectClauses g)) (Selector c FieldRef a)
     }
 
 data SelectClause (g :: * -> *) where
-    Fields :: Selector (Product g FieldAlias) a -> SelectClause g
+    Fields :: Selector c (Product g FieldAlias) a -> SelectClause g
     From :: (PersistEntity record) => Ref (Entity record) -> SelectClause g
-    FromSub :: Int -> SelectQuery g a -> SelectClause g
+    FromSub :: Int -> SelectQuery c g a -> SelectClause g
     Where :: g Bool -> SelectClause g
     OrderBy :: g b -> OrderType -> SelectClause g
     Limit :: Int64 -> SelectClause g
@@ -54,7 +54,7 @@ data SelectClause (g :: * -> *) where
 newtype SelectClauses g = SelectClauses (DList (SelectClause g))
     deriving (Semigroup, Monoid)
 
-instance Hoist SelectQuery where
+instance Hoist (SelectQuery c) where
     hoist f (SelectQuery a) = SelectQuery $ State.mapStateT h a
         where
         h = Writer.mapWriter $ \(x, (SelectClauses w)) -> (x, SelectClauses (fmap (hoist' f) w))
@@ -71,7 +71,7 @@ hoist' _ Initial = Initial
 
 data OrderType = Asc | Desc deriving (Show, Eq)
 
-selectFrom :: forall a g record. (PersistEntity record) => (Selector FieldRef (Entity record) -> SelectQuery g (Entity record) -> SelectQuery g a) -> SelectQuery g a
+selectFrom :: forall a c g record. (PersistEntity record) => (Selector () FieldRef (Entity record) -> SelectQuery () g (Entity record) -> SelectQuery c g a) -> SelectQuery c g a
 selectFrom f = SelectQuery $ do
     (i, j) <- State.get
     State.put (i + 1, j)
@@ -80,7 +80,7 @@ selectFrom f = SelectQuery $ do
     lift . Writer.tell . SelectClauses . return . From $ ref
     unSelectQuery . f sref . SelectQuery . return $ sref
 
-selectFromSub :: SelectQuery g b -> (Selector FieldRef b -> SelectQuery g b -> SelectQuery g a) -> SelectQuery g a
+selectFromSub :: SelectQuery c g b -> (Selector c FieldRef b -> SelectQuery c g b -> SelectQuery d g a) -> SelectQuery d g a
 selectFromSub sub f = SelectQuery $ do
     (i, j) <- State.get
     State.put (i + 1, j)
@@ -89,7 +89,7 @@ selectFromSub sub f = SelectQuery $ do
     lift . Writer.tell . SelectClauses . return . FromSub i $ sub
     unSelectQuery . f qref . SelectQuery . return $ qref
 
-resultAs :: Selector g b -> (Selector FieldRef b -> SelectQuery g b -> SelectQuery g a) -> SelectQuery g c -> SelectQuery g a
+resultAs :: Selector c1 g a1 -> (Selector c1 FieldRef a1 -> SelectQuery c1 g a1 -> SelectQuery c2 g a2) -> SelectQuery c0 g a0 -> SelectQuery c2 g a2
 resultAs selector cont (SelectQuery pre) = SelectQuery $ do
     _ <- pre
     selectorWithAlias <- mkRef selector
@@ -107,50 +107,50 @@ resultAs selector cont (SelectQuery pre) = SelectQuery $ do
     aliasToRef :: FieldAlias a -> FieldRef a
     aliasToRef (FieldAlias a) = FieldRef a
 
-where_ :: g Bool -> SelectQuery g a -> SelectQuery g a
+where_ :: g Bool -> SelectQuery c g a -> SelectQuery c g a
 where_ a (SelectQuery q) = SelectQuery $ do
     r <- q
     lift . Writer.tell . SelectClauses . return $ Where a
     return r
 
-orderBy :: g b -> OrderType -> SelectQuery g a -> SelectQuery g a
+orderBy :: g b -> OrderType -> SelectQuery c g a -> SelectQuery c g a
 orderBy a t (SelectQuery q) = SelectQuery $ do
     r <- q
     lift . Writer.tell . SelectClauses . return $ OrderBy a t
     return r
 
-limit :: Int64 -> SelectQuery g a -> SelectQuery g a
+limit :: Int64 -> SelectQuery c g a -> SelectQuery c g a
 limit a (SelectQuery q) = SelectQuery $ do
     r <- q
     lift . Writer.tell . SelectClauses . return . Limit $ a
     return r
 
-offset :: Int64 -> SelectQuery g a -> SelectQuery g a
+offset :: Int64 -> SelectQuery c g a -> SelectQuery c g a
 offset a (SelectQuery q) = SelectQuery $ do
     r <- q
     lift . Writer.tell . SelectClauses . return . Offset $ a
     return r
 
-data Selector g x where
-    Sel :: (PersistEntity a) => Ref (Entity a) -> Selector g (Entity a)
-    (:$) :: (PersistField a) => (a -> b) -> g a -> Selector g b
-    (:*) :: (PersistField a) => Selector g (a -> b) -> g a -> Selector g b
+data Selector c g x where
+    Sel :: (PersistEntity a) => Ref (Entity a) -> Selector () g (Entity a)
+    (:$) :: (PersistField a) => (a -> b) -> g a -> Selector (a -> b) g b
+    (:*) :: (PersistField a) => Selector c g (a -> b) -> g a -> Selector c g b
 
 infixl 4 :$, :*
 
-instance Hoist Selector where
+instance Hoist (Selector c) where
     hoist _ (Sel a) = Sel a
     hoist f (g :$ a) = g :$ (f a)
     hoist f (s :* a) = (hoist f s) :* (f a)
 
-mkSelectorFieldAlias :: Int -> Selector g a -> (Selector (Product g FieldAlias) a, Int)
+mkSelectorFieldAlias :: Int -> Selector c g a -> (Selector c (Product g FieldAlias) a, Int)
 mkSelectorFieldAlias i (Sel a) = (Sel a, i)
 mkSelectorFieldAlias i (f :$ a) = (f :$ Pair a (toFieldAlias i a), i + 1)
 mkSelectorFieldAlias i (s :* a) =
     let (r, next) = mkSelectorFieldAlias i s
     in (r :* Pair a (toFieldAlias next a), next + 1)
 
-qualifySelectorFieldRef :: Int -> Selector FieldRef a -> Selector FieldRef a
+qualifySelectorFieldRef :: Int -> Selector c FieldRef a -> Selector c FieldRef a
 qualifySelectorFieldRef tid (Sel (Ref _)) = Sel (Ref tid)
 qualifySelectorFieldRef tid (f :$ a) = f :$ qualifyFieldRef tid a
 qualifySelectorFieldRef tid (s :* a) = qualifySelectorFieldRef tid s :* qualifyFieldRef tid a
