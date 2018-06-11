@@ -13,7 +13,7 @@ module ExSql.Syntax.SelectQuery
     , SelectClause(..)
     , SelectClauses(..)
     , OrderType(..)
-    , Ref
+    , RelationRef
     , selectFrom
     , selectFromSub
     , resultAs
@@ -35,7 +35,7 @@ import Data.Proxy (Proxy(..))
 import Data.Semigroup (Semigroup(..))
 import Database.Persist (Entity(..), PersistEntity(..), PersistField(..))
 import ExSql.Syntax.Class
-import ExSql.Syntax.Internal.Types (Ref(..), FieldAlias(..), FieldRef(..), PersistConvert)
+import ExSql.Syntax.Internal.Types (RelationAlias(..), RelationRef(..), FieldAlias(..), FieldRef(..), PersistConvert)
 
 newtype SelectQuery c (g :: * -> *) a = SelectQuery
     { unSelectQuery :: StateT (Int, Int) (Writer (SelectClauses g)) (Selector c FieldRef a)
@@ -43,7 +43,7 @@ newtype SelectQuery c (g :: * -> *) a = SelectQuery
 
 data SelectClause (g :: * -> *) where
     Fields :: Selector c (Product g FieldAlias) a -> SelectClause g
-    From :: (PersistEntity record) => Ref (Entity record) -> SelectClause g
+    From :: (PersistEntity record) => RelationRef (Entity record) -> SelectClause g
     FromSub :: Int -> SelectQuery c g a -> SelectClause g
     Where :: g Bool -> SelectClause g
     OrderBy :: g b -> OrderType -> SelectClause g
@@ -75,7 +75,7 @@ selectFrom :: forall a c g record. (PersistEntity record) => (Selector () FieldR
 selectFrom f = SelectQuery $ do
     (i, j) <- State.get
     State.put (i + 1, j)
-    let ref = Ref i :: Ref (Entity record)
+    let ref = RelationRef i :: RelationRef (Entity record)
         sref = Sel ref
     lift . Writer.tell . SelectClauses . return . From $ ref
     unSelectQuery . f sref . SelectQuery . return $ sref
@@ -132,7 +132,7 @@ offset a (SelectQuery q) = SelectQuery $ do
     return r
 
 data Selector c g x where
-    Sel :: (PersistEntity a) => Ref (Entity a) -> Selector () g (Entity a)
+    Sel :: (PersistEntity a) => RelationRef (Entity a) -> Selector () g (Entity a)
     (:$) :: (PersistField a) => (a -> b) -> g a -> Selector (a -> b) g b
     (:*) :: (PersistField a) => Selector c g (a -> b) -> g a -> Selector c g b
 
@@ -151,7 +151,7 @@ mkSelectorFieldAlias i (s :* a) =
     in (r :* Pair a (toFieldAlias next a), next + 1)
 
 qualifySelectorFieldRef :: Int -> Selector c FieldRef a -> Selector c FieldRef a
-qualifySelectorFieldRef tid (Sel (Ref _)) = Sel (Ref tid)
+qualifySelectorFieldRef tid (Sel (RelationRef _)) = Sel (RelationRef tid)
 qualifySelectorFieldRef tid (f :$ a) = f :$ qualifyFieldRef tid a
 qualifySelectorFieldRef tid (s :* a) = qualifySelectorFieldRef tid s :* qualifyFieldRef tid a
 

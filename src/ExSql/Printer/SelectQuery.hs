@@ -166,8 +166,8 @@ mkPersistConvertInternal f = do
     r <- lift . Persist.fromPersistValue $ val
     return (f r)
 
-renderFrom :: (Persist.PersistEntity record) => Ref (Persist.Entity record) -> Clause
-renderFrom ref @ (Ref eid) =
+renderFrom :: (Persist.PersistEntity record) => RelationRef (Persist.Entity record) -> Clause
+renderFrom ref @ (RelationRef eid) =
     let tableName = Persist.unDBName . Persist.entityDB . Persist.entityDef . fmap Persist.entityVal . toProxy $ ref
         alias = printFromAlias eid
         a = TLB.fromText tableName <> TLB.fromText " AS " <> alias
@@ -186,8 +186,8 @@ renderSelectorFields p (_ :$ Pair a alias) = renderFieldClause (p Nothing Nothin
 renderSelectorFields p (s :* Pair a alias) =
     renderSelectorFields p s <> renderFieldClause (p Nothing Nothing a) alias
 
-renderFieldWildcard :: Ref a -> Clause
-renderFieldWildcard (Ref eid) =
+renderFieldWildcard :: RelationRef a -> Clause
+renderFieldWildcard (RelationRef eid) =
     let alias = printFromAlias eid
         a = alias <> TLB.fromText ".*"
     in Clause . return . StatementBuilder $ (a, mempty)

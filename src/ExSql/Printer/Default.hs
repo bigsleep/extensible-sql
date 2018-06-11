@@ -167,7 +167,7 @@ printFunction p _ _ (Function6 fname a0 a1 a2 a3 a4 a5) =
     printFun fname [p Nothing Nothing a0, p Nothing Nothing a1, p Nothing Nothing a2, p Nothing Nothing a3, p Nothing Nothing a4, p Nothing Nothing a5]
 
 printColumn :: ExprPrinterType (Expr xs Identity) -> PrinterType (Expr xs Identity) Column a
-printColumn _ l r (Column (Ref tid) col) =
+printColumn _ l r (Column (RelationRef tid) col) =
     StatementBuilder (handleBracket l c r x, mempty)
     where
     c = Relativity (Precedence 3) LeftToRight

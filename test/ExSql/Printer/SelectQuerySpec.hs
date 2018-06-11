@@ -46,14 +46,14 @@ Person
 
 data E a where
     Lit :: (PersistField a) => a -> E a
-    Col :: (PersistEntity record) => Ref (Entity record) -> EntityField record a -> E a
+    Col :: (PersistEntity record) => RelationRef (Entity record) -> EntityField record a -> E a
     F :: (PersistField a) => FieldRef a -> E a
 
 pe :: ExprPrinterType E
 pe _ _ (Lit a) =
     let v = toPersistValue a
     in StatementBuilder (TLB.singleton '?', return v)
-pe _ _ (Col (Ref tid) col) =
+pe _ _ (Col (RelationRef tid) col) =
     let columnName = unDBName . fieldDBName $ col
         x = printFromAlias tid `mappend` TLB.singleton '.' `mappend` TLB.fromText columnName
     in StatementBuilder (x, mempty)

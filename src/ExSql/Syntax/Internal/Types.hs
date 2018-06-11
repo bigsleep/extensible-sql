@@ -1,10 +1,11 @@
 {-# LANGUAGE GADTs #-}
 module ExSql.Syntax.Internal.Types
-    ( ValueList
-    , PersistConvert
-    , Ref(..)
-    , FieldAlias(..)
+    ( FieldAlias(..)
     , FieldRef(..)
+    , PersistConvert
+    , RelationAlias(..)
+    , RelationRef(..)
+    , ValueList
     ) where
 
 import Control.Monad
@@ -12,7 +13,10 @@ import Control.Monad.Trans.State.Strict (StateT)
 import Data.Text (Text)
 import Database.Persist (Entity, PersistEntity(..), PersistField(..), PersistValue(..))
 
-newtype Ref a = Ref Int
+newtype RelationRef a = RelationRef Int
+    deriving (Show, Eq)
+
+newtype RelationAlias a = RelationAlias Int
     deriving (Show, Eq)
 
 data FieldRef a = FieldRef Int | QualifiedFieldRef Int Int
