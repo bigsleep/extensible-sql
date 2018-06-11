@@ -29,7 +29,6 @@ import Data.List (intersperse, uncons)
 import Data.DList (DList)
 import qualified Data.DList as DList
 import Data.Functor.Identity (Identity(..))
-import Data.Functor.Product (Product(..))
 import Data.Maybe (maybe)
 import Data.Proxy (Proxy(..))
 import Data.Semigroup (Semigroup(..))
@@ -46,7 +45,7 @@ import ExSql.Printer.Common
 import ExSql.Printer.Types
 import ExSql.Syntax.Class
 import ExSql.Syntax.Relativity
-import ExSql.Syntax.SelectQuery (SelectQuery(..), Selector(..), OrderType(..))
+import ExSql.Syntax.SelectQuery (SelectQuery(..), FieldsSelector(..), OrderType(..))
 import qualified ExSql.Syntax.SelectQuery as Syntax
 import ExSql.Syntax.Internal.Types
 
@@ -147,16 +146,22 @@ renderSelectClause _ Syntax.Initial = mempty
 toProxy :: f a -> Proxy a
 toProxy _ = Proxy
 
-mkPersistConvert :: Selector c g a -> PersistConvert a
-mkPersistConvert (Sel a) = do
+mkPersistConvert :: FieldsSelector c Ref a -> PersistConvert a
+mkPersistConvert (f :$: a @ RelationRef {}) = f <$> mkPersistConvertEntity a
+mkPersistConvert (f :$: FieldRef {}) = mkPersistConvertInternal f
+mkPersistConvert (f :$: QualifiedFieldRef {}) = mkPersistConvertInternal f
+mkPersistConvert (s :*: a @ RelationRef {}) = mkPersistConvert s <*> mkPersistConvertEntity a
+mkPersistConvert (s :*: FieldRef {}) = mkPersistConvert s >>= mkPersistConvertInternal
+mkPersistConvert (s :*: QualifiedFieldRef {}) = mkPersistConvert s >>= mkPersistConvertInternal
+
+mkPersistConvertEntity :: (Persist.PersistEntity a) => Ref (Persist.Entity a) -> PersistConvert (Persist.Entity a)
+mkPersistConvertEntity a = do
     let def = Persist.entityDef . fmap Persist.entityVal . toProxy $ a
         colNum = Persist.entityColumnCount def
     xs <- State.get
     (vals, rest) <- maybe (lift . Left $ "not enough input values") return (splitAtExactMay colNum xs)
     State.put rest
     lift $ Persist.parseEntityValues def vals
-mkPersistConvert (f :$: _) = mkPersistConvertInternal f
-mkPersistConvert (s :*: _) = mkPersistConvert s >>= mkPersistConvertInternal
 
 mkPersistConvertInternal :: (Persist.PersistField t) => (t -> a) -> PersistConvert a
 mkPersistConvertInternal f = do
@@ -166,8 +171,8 @@ mkPersistConvertInternal f = do
     r <- lift . Persist.fromPersistValue $ val
     return (f r)
 
-renderFrom :: (Persist.PersistEntity record) => RelationRef (Persist.Entity record) -> Clause
-renderFrom ref @ (RelationRef eid) =
+renderFrom :: (Persist.PersistEntity record) => RelationAlias (Persist.Entity record) -> Clause
+renderFrom ref @ (RelationAlias eid) =
     let tableName = Persist.unDBName . Persist.entityDB . Persist.entityDef . fmap Persist.entityVal . toProxy $ ref
         alias = printFromAlias eid
         a = TLB.fromText tableName <> TLB.fromText " AS " <> alias
@@ -180,14 +185,16 @@ renderFromSub p tid query =
         a = addBracket t <> TLB.fromText " AS " <> alias
     in Clause . return . StatementBuilder $ (a, ps)
 
-renderSelectorFields :: ExprPrinterType g -> Selector c (Product g FieldAlias) a -> Clause
-renderSelectorFields _ (Sel ref) = renderFieldWildcard ref
-renderSelectorFields p (_ :$: Pair a alias) = renderFieldClause (p Nothing Nothing a) alias
-renderSelectorFields p (s :*: Pair a alias) =
+renderSelectorFields :: ExprPrinterType g -> FieldsSelector c (SelWithAlias g) a -> Clause
+renderSelectorFields p (_ :$: Star' alias) = renderFieldWildcard alias
+renderSelectorFields p (_ :$: Sel' a alias) = renderFieldClause (p Nothing Nothing a) alias
+renderSelectorFields p (s :*: Star' alias) =
+    renderSelectorFields p s <> renderFieldWildcard alias
+renderSelectorFields p (s :*: Sel' a alias) =
     renderSelectorFields p s <> renderFieldClause (p Nothing Nothing a) alias
 
-renderFieldWildcard :: RelationRef a -> Clause
-renderFieldWildcard (RelationRef eid) =
+renderFieldWildcard :: RelationAlias a -> Clause
+renderFieldWildcard (RelationAlias eid) =
     let alias = printFromAlias eid
         a = alias <> TLB.fromText ".*"
     in Clause . return . StatementBuilder $ (a, mempty)

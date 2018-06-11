@@ -35,7 +35,7 @@ import ExSql.Printer.Common
 import ExSql.Printer.SelectQuery
 import ExSql.Printer.Types
 
-import Test.Hspec hiding (Selector)
+import Test.Hspec hiding (FieldsSelector)
 
 Persist.share [Persist.mkPersist Persist.sqlSettings] [Persist.persistLowerCase|
 Person
@@ -46,8 +46,8 @@ Person
 
 data E a where
     Lit :: (PersistField a) => a -> E a
-    Col :: (PersistEntity record) => RelationRef (Entity record) -> EntityField record a -> E a
-    F :: (PersistField a) => FieldRef a -> E a
+    Col :: (PersistEntity record) => Ref (Entity record) -> EntityField record a -> E a
+    F :: (PersistField a) => Ref a -> E a
 
 pe :: ExprPrinterType E
 pe _ _ (Lit a) =
@@ -62,20 +62,20 @@ pe _ _ (F (QualifiedFieldRef tid fid)) =
     let x = printFromAlias tid `mappend` TLB.singleton '.' `mappend` printFieldAlias fid
     in StatementBuilder (x, mempty)
 
-sq1 :: SelectQuery () Identity (Entity Person)
+sq1 :: SelectQuery (Entity Person -> Entity Person) Identity (Entity Person)
 sq1 = selectFrom $ \_ -> id
 
 sq2 :: SelectQuery (Int -> Text -> Int -> (Int, Text, Int)) E (Int, Text, Int)
-sq2 = selectFrom $ \(_ :: Selector () FieldRef (Entity Person)) -> resultAs ((,,) :$: Lit 1 :*: Lit "a" :*: Lit 2) $ \_ -> id
+sq2 = selectFrom $ \(_ :: Ref (Entity Person)) -> resultAs ((,,) :$: Sel (Lit 1) :*: Sel (Lit "a") :*: Sel (Lit 2)) $ \_ -> id
 
 sq3 :: SelectQuery (Text -> Int -> (Text, Int)) E (Text, Int)
-sq3 = selectFrom $ \(Sel ref :: Selector () FieldRef (Entity Person)) ->
-        resultAs ((,) :$: Col ref PersonName :*: Col ref PersonAge) $
+sq3 = selectFrom $ \(ref :: Ref (Entity Person)) ->
+        resultAs ((,) :$: Sel (Col ref PersonName) :*: Sel (Col ref PersonAge)) $
             \(_ :$: f1 :*: _) -> orderBy (F f1) Asc
 
 sq4 :: SelectQuery (Int -> Text -> (Int, Text)) E (Int, Text)
 sq4 = selectFromSub sq3 $ \(_ :$: f1 :*: f2) ->
-        resultAs ((,) :$: F f2 :*: F f1) $ \(_ :$: f2' :*: f1') -> orderBy (F f1') Asc
+        resultAs ((,) :$: Sel (F f2) :*: Sel (F f1)) $ \(_ :$: f2' :*: f1') -> orderBy (F f1') Asc
 
 spec :: Spec
 spec = describe "SelectQuery" $ do

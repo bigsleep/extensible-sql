@@ -110,7 +110,7 @@ runSelect query = do
 
 testSelect1 :: Run -> Spec
 testSelect1 run = it "select1" $ do
-    let query = selectFrom $ \(_ :: ExSql.Syntax.SelectQuery.Selector () FieldRef (Persist.Entity Driver)) -> id
+    let query = selectFrom $ \(_ :: Ref (Persist.Entity Driver)) -> id
     r <- run $ do
         Persist.rawExecute "delete from driver" []
         _ <- Persist.insert driver1
