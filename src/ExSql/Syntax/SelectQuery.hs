@@ -133,27 +133,27 @@ offset a (SelectQuery q) = SelectQuery $ do
 
 data Selector c g x where
     Sel :: (PersistEntity a) => RelationRef (Entity a) -> Selector () g (Entity a)
-    (:$) :: (PersistField a) => (a -> b) -> g a -> Selector (a -> b) g b
-    (:*) :: (PersistField a) => Selector c g (a -> b) -> g a -> Selector c g b
+    (:$:) :: (PersistField a) => (a -> b) -> g a -> Selector (a -> b) g b
+    (:*:) :: (PersistField a) => Selector c g (a -> b) -> g a -> Selector c g b
 
-infixl 4 :$, :*
+infixl 4 :$:, :*:
 
 instance Hoist (Selector c) where
     hoist _ (Sel a) = Sel a
-    hoist f (g :$ a) = g :$ (f a)
-    hoist f (s :* a) = (hoist f s) :* (f a)
+    hoist f (g :$: a) = g :$: (f a)
+    hoist f (s :*: a) = (hoist f s) :*: (f a)
 
 mkSelectorFieldAlias :: Int -> Selector c g a -> (Selector c (Product g FieldAlias) a, Int)
 mkSelectorFieldAlias i (Sel a) = (Sel a, i)
-mkSelectorFieldAlias i (f :$ a) = (f :$ Pair a (toFieldAlias i a), i + 1)
-mkSelectorFieldAlias i (s :* a) =
+mkSelectorFieldAlias i (f :$: a) = (f :$: Pair a (toFieldAlias i a), i + 1)
+mkSelectorFieldAlias i (s :*: a) =
     let (r, next) = mkSelectorFieldAlias i s
-    in (r :* Pair a (toFieldAlias next a), next + 1)
+    in (r :*: Pair a (toFieldAlias next a), next + 1)
 
 qualifySelectorFieldRef :: Int -> Selector c FieldRef a -> Selector c FieldRef a
 qualifySelectorFieldRef tid (Sel (RelationRef _)) = Sel (RelationRef tid)
-qualifySelectorFieldRef tid (f :$ a) = f :$ qualifyFieldRef tid a
-qualifySelectorFieldRef tid (s :* a) = qualifySelectorFieldRef tid s :* qualifyFieldRef tid a
+qualifySelectorFieldRef tid (f :$: a) = f :$: qualifyFieldRef tid a
+qualifySelectorFieldRef tid (s :*: a) = qualifySelectorFieldRef tid s :*: qualifyFieldRef tid a
 
 qualifyFieldRef :: Int -> FieldRef a -> FieldRef a
 qualifyFieldRef tid (FieldRef fid) = QualifiedFieldRef tid fid

@@ -66,16 +66,16 @@ sq1 :: SelectQuery () Identity (Entity Person)
 sq1 = selectFrom $ \_ -> id
 
 sq2 :: SelectQuery (Int -> Text -> Int -> (Int, Text, Int)) E (Int, Text, Int)
-sq2 = selectFrom $ \(_ :: Selector () FieldRef (Entity Person)) -> resultAs ((,,) :$ Lit 1 :* Lit "a" :* Lit 2) $ \_ -> id
+sq2 = selectFrom $ \(_ :: Selector () FieldRef (Entity Person)) -> resultAs ((,,) :$: Lit 1 :*: Lit "a" :*: Lit 2) $ \_ -> id
 
 sq3 :: SelectQuery (Text -> Int -> (Text, Int)) E (Text, Int)
 sq3 = selectFrom $ \(Sel ref :: Selector () FieldRef (Entity Person)) ->
-        resultAs ((,) :$ Col ref PersonName :* Col ref PersonAge) $
-            \(_ :$ f1 :* _) -> orderBy (F f1) Asc
+        resultAs ((,) :$: Col ref PersonName :*: Col ref PersonAge) $
+            \(_ :$: f1 :*: _) -> orderBy (F f1) Asc
 
 sq4 :: SelectQuery (Int -> Text -> (Int, Text)) E (Int, Text)
-sq4 = selectFromSub sq3 $ \(_ :$ f1 :* f2) ->
-        resultAs ((,) :$ F f2 :* F f1) $ \(_ :$ f2' :* f1') -> orderBy (F f1') Asc
+sq4 = selectFromSub sq3 $ \(_ :$: f1 :*: f2) ->
+        resultAs ((,) :$: F f2 :*: F f1) $ \(_ :$: f2' :*: f1') -> orderBy (F f1') Asc
 
 spec :: Spec
 spec = describe "SelectQuery" $ do

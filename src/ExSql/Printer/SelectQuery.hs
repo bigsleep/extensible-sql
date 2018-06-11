@@ -155,8 +155,8 @@ mkPersistConvert (Sel a) = do
     (vals, rest) <- maybe (lift . Left $ "not enough input values") return (splitAtExactMay colNum xs)
     State.put rest
     lift $ Persist.parseEntityValues def vals
-mkPersistConvert (f :$ _) = mkPersistConvertInternal f
-mkPersistConvert (s :* _) = mkPersistConvert s >>= mkPersistConvertInternal
+mkPersistConvert (f :$: _) = mkPersistConvertInternal f
+mkPersistConvert (s :*: _) = mkPersistConvert s >>= mkPersistConvertInternal
 
 mkPersistConvertInternal :: (Persist.PersistField t) => (t -> a) -> PersistConvert a
 mkPersistConvertInternal f = do
@@ -182,8 +182,8 @@ renderFromSub p tid query =
 
 renderSelectorFields :: ExprPrinterType g -> Selector c (Product g FieldAlias) a -> Clause
 renderSelectorFields _ (Sel ref) = renderFieldWildcard ref
-renderSelectorFields p (_ :$ Pair a alias) = renderFieldClause (p Nothing Nothing a) alias
-renderSelectorFields p (s :* Pair a alias) =
+renderSelectorFields p (_ :$: Pair a alias) = renderFieldClause (p Nothing Nothing a) alias
+renderSelectorFields p (s :*: Pair a alias) =
     renderSelectorFields p s <> renderFieldClause (p Nothing Nothing a) alias
 
 renderFieldWildcard :: RelationRef a -> Clause
