@@ -74,7 +74,7 @@ instance Monoid SelectClauses where
     mempty = SelectClauses mempty mempty mempty mempty (LimitClause Nothing Nothing)
     mappend = (<>)
 
-printSelect :: ExprPrinterType g -> Syntax.SelectQuery c g a -> StatementBuilder
+printSelect :: ExprPrinterType g -> Syntax.SelectQuery g a -> StatementBuilder
 printSelect p query =
     let (_, sc) = renderSelect p query
     in printSelectClauses sc
@@ -126,7 +126,7 @@ printLimitClause (LimitClause (Just offset) Nothing) = StatementBuilder (TLB.fro
 printLimitClause (LimitClause Nothing (Just limit)) = StatementBuilder (TLB.fromText " LIMIT " <> TLB.decimal limit, mempty)
 printLimitClause (LimitClause (Just offset) (Just limit)) = StatementBuilder (TLB.fromText " OFFSET " <> TLB.decimal offset <> TLB.fromText " LIMIT " <> TLB.decimal limit, mempty)
 
-renderSelect :: ExprPrinterType g -> Syntax.SelectQuery c g a -> (PersistConvert a, SelectClauses)
+renderSelect :: ExprPrinterType g -> Syntax.SelectQuery g a -> (PersistConvert a, SelectClauses)
 renderSelect p query = (convert, clauses)
     where
     (sref, Syntax.SelectClauses sclauses) = Writer.runWriter . flip State.evalStateT (0, 0) . unSelectQuery $ query
@@ -146,7 +146,7 @@ renderSelectClause _ Syntax.Initial = mempty
 toProxy :: f a -> Proxy a
 toProxy _ = Proxy
 
-mkPersistConvert :: FieldsSelector c Ref a -> PersistConvert a
+mkPersistConvert :: FieldsSelector Ref a -> PersistConvert a
 mkPersistConvert (f :$: a @ RelationRef {}) = f <$> mkPersistConvertEntity a
 mkPersistConvert (f :$: FieldRef {}) = mkPersistConvertInternal f
 mkPersistConvert (f :$: QualifiedFieldRef {}) = mkPersistConvertInternal f
@@ -178,14 +178,14 @@ renderFrom ref @ (RelationAlias eid) =
         a = TLB.fromText tableName <> TLB.fromText " AS " <> alias
     in Clause . return . StatementBuilder $ (a, mempty)
 
-renderFromSub :: ExprPrinterType g -> Int -> SelectQuery c g a -> Clause
+renderFromSub :: ExprPrinterType g -> Int -> SelectQuery g a -> Clause
 renderFromSub p tid query =
     let alias = printFromAlias tid
         StatementBuilder (t, ps) = printSelect p query
         a = addBracket t <> TLB.fromText " AS " <> alias
     in Clause . return . StatementBuilder $ (a, ps)
 
-renderSelectorFields :: ExprPrinterType g -> FieldsSelector c (SelWithAlias g) a -> Clause
+renderSelectorFields :: ExprPrinterType g -> FieldsSelector (SelWithAlias g) a -> Clause
 renderSelectorFields p (_ :$: Star' alias) = renderFieldWildcard alias
 renderSelectorFields p (_ :$: Sel' a alias) = renderFieldClause (p Nothing Nothing a) alias
 renderSelectorFields p (s :*: Star' alias) =
