@@ -1,6 +1,5 @@
 {-# LANGUAGE
     GADTs,
-    KindSignatures,
     OverloadedStrings,
     RankNTypes,
     TypeOperators

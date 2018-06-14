@@ -114,7 +114,7 @@ printOrderByClause (OrderByClause DList.Nil) = mempty
 printOrderByClause (OrderByClause xs) = StatementBuilder (tlb, mconcat ps)
     where
     ys = DList.toList xs
-    ps = map (snd . unStatementBuilder . fst) $ ys
+    ps = map (snd . unStatementBuilder . fst) ys
     ts = map (\(StatementBuilder (t, _), order) -> t <> TLB.singleton ' ' <> TLB.fromText (showOrder order)) ys
     tlb = TLB.fromText " ORDER BY " <> (mconcat . intersperse (TLB.fromText ", ") $ ts)
     showOrder Asc = "ASC"
@@ -186,7 +186,7 @@ renderFromSub p tid query =
     in Clause . return . StatementBuilder $ (a, ps)
 
 renderSelectorFields :: ExprPrinterType g -> FieldsSelector (SelWithAlias g) a -> Clause
-renderSelectorFields p (_ :$: Star' alias) = renderFieldWildcard alias
+renderSelectorFields _ (_ :$: Star' alias) = renderFieldWildcard alias
 renderSelectorFields p (_ :$: Sel' a alias) = renderFieldClause (p Nothing Nothing a) alias
 renderSelectorFields p (s :*: Star' alias) =
     renderSelectorFields p s <> renderFieldWildcard alias

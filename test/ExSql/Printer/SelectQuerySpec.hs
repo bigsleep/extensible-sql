@@ -63,10 +63,10 @@ pe _ _ (F (QualifiedFieldRef tid fid)) =
     in StatementBuilder (x, mempty)
 
 sq1 :: SelectQuery Identity (Entity Person)
-sq1 = selectFrom $ \_ -> id
+sq1 = selectFrom $ const id
 
 sq2 :: SelectQuery E (Int, Text, Int)
-sq2 = selectFrom $ \(_ :: Ref (Entity Person)) -> resultAs ((,,) :$: Sel (Lit 1) :*: Sel (Lit "a") :*: Sel (Lit 2)) $ \_ -> id
+sq2 = selectFrom $ \(_ :: Ref (Entity Person)) -> resultAs ((,,) :$: Sel (Lit 1) :*: Sel (Lit "a") :*: Sel (Lit 2)) $ const id
 
 sq3 :: SelectQuery E (Text, Int)
 sq3 = selectFrom $ \(ref :: Ref (Entity Person)) ->

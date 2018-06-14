@@ -55,10 +55,10 @@ pp :: Expr Nodes Identity a -> String
 pp = runPrinters (printers pp)
 
 refInt :: (Ast g, MonadReader Int64 m, Member (NodeTypes g) Literal) => g m Int64
-refInt = mkAst (ask >>= return . LitInt)
+refInt = mkAst (LitInt <$> ask)
 
 refMap :: (Ast g, MonadReader (Map String Int64) m, Member (NodeTypes g) Literal) => String -> g m Int64
-refMap name = mkAst (ask >>= return . LitInt . Map.findWithDefault 0 name)
+refMap name = mkAst $ LitInt . Map.findWithDefault 0 name <$> ask
 
 e1 :: (Ast g, MonadReader Int64 m, Member (NodeTypes g) Arithmetic, Member (NodeTypes g) Literal) => g m Int64
 e1 = addition refInt refInt
@@ -70,8 +70,8 @@ spec :: Spec
 spec = do
     describe "hoistExpr" $ do
         it "can use with MonadReader" $ do
-            pp (hoistExpr (flip runReaderT 1) e1) `shouldBe` "(1+1)"
+            pp (hoistExpr (`runReaderT` 1) e1) `shouldBe` "(1+1)"
 
         it "with Map" $ do
             let m = Map.fromList [("a", 123), ("b", 456)]
-            pp (hoistExpr (flip runReaderT m) e2) `shouldBe` "(123+456)"
+            pp (hoistExpr (`runReaderT` m) e2) `shouldBe` "(123+456)"

@@ -106,7 +106,7 @@ runSelect query = do
         StatementBuilder (tlb, ps) = printSelectClauses sc
         t = TL.toStrict . TLB.toLazyText $ tlb
     xs <- runConduit $ Persist.rawQuery t (DList.toList ps) .| CL.consume
-    return . sequence . fmap (State.evalStateT convert) $ xs
+    return . traverse (State.evalStateT convert) $ xs
 
 testSelect1 :: Run -> Spec
 testSelect1 run = it "select1" $ do

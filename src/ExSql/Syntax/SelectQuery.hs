@@ -78,7 +78,7 @@ newtype SelectClauses g = SelectClauses (DList (SelectClause g))
 instance Hoist SelectQuery where
     hoist f (SelectQuery a) = SelectQuery $ State.mapStateT h a
         where
-        h = Writer.mapWriter $ \(x, (SelectClauses w)) -> (x, SelectClauses (fmap (hoist' f) w))
+        h = Writer.mapWriter $ \(x, SelectClauses w) -> (x, SelectClauses (fmap (hoist' f) w))
 
 hoist' :: (forall x. m x -> n x) -> SelectClause m -> SelectClause n
 hoist' f (Fields a) = Fields (hoist (hoist f) a)
@@ -161,8 +161,8 @@ data FieldsSelector g x where
 infixl 4 :$:, :*:
 
 instance Hoist FieldsSelector where
-    hoist f (g :$: a) = g :$: (f a)
-    hoist f (s :*: a) = (hoist f s) :*: (f a)
+    hoist f (g :$: a) = g :$: f a
+    hoist f (s :*: a) = hoist f s :*: f a
 
 mkSelectorWithAlias :: Int -> FieldsSelector (Sel g) a -> (FieldsSelector (SelWithAlias g) a, Int)
 mkSelectorWithAlias i (f :$: Star a) = (f :$: Star' a, i)
