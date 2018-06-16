@@ -1,17 +1,15 @@
-{-# LANGUAGE
-    DataKinds,
-    FlexibleContexts,
-    GADTs,
-    GeneralizedNewtypeDeriving,
-    MultiParamTypeClasses,
-    OverloadedStrings,
-    QuasiQuotes,
-    RankNTypes,
-    ScopedTypeVariables,
-    TemplateHaskell,
-    TypeFamilies,
-    TypeOperators
-#-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE QuasiQuotes                #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE TypeOperators              #-}
 module ExSql.Printer.SelectQuerySpec
     ( spec
     ) where
@@ -19,21 +17,23 @@ module ExSql.Printer.SelectQuerySpec
 import qualified Control.Monad.Trans.State.Strict as State (runStateT)
 import Data.DList (DList)
 import qualified Data.DList as DList
+import Data.Functor.Identity (Identity(..))
 import Data.Text (Text)
 import qualified Data.Text as Text (unpack)
 import qualified Data.Text.Lazy.Builder as TLB
-import Data.Functor.Identity (Identity(..))
-import Database.Persist (DBName(..), Entity, PersistEntity(..), PersistValue(..))
+import Database.Persist (DBName(..), Entity, PersistEntity(..),
+                         PersistValue(..))
 import Database.Persist.Class (PersistField(..))
 import Database.Persist.Sql (fieldDBName)
-import qualified Database.Persist.TH as Persist (mkPersist, persistLowerCase, share, sqlSettings)
+import qualified Database.Persist.TH as Persist (mkPersist, persistLowerCase,
+                                                 share, sqlSettings)
 
-import ExSql.Syntax.SelectQuery
-import ExSql.Syntax.Relativity
-import ExSql.Syntax.Internal.Types
 import ExSql.Printer.Common
 import ExSql.Printer.SelectQuery
 import ExSql.Printer.Types
+import ExSql.Syntax.Internal.Types
+import ExSql.Syntax.Relativity
+import ExSql.Syntax.SelectQuery
 
 import Test.Hspec hiding (FieldsSelector)
 

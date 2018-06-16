@@ -1,8 +1,6 @@
-{-# LANGUAGE
-    FlexibleContexts,
-    GADTs,
-    KindSignatures
-#-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs            #-}
+{-# LANGUAGE KindSignatures   #-}
 module ExSql.Syntax.Field
     ( Field(..)
     , field

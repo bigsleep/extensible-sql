@@ -1,18 +1,16 @@
-{-# LANGUAGE
-    DataKinds,
-    FlexibleContexts,
-    GADTs,
-    KindSignatures,
-    RankNTypes,
-    TypeOperators
-#-}
+{-# LANGUAGE DataKinds        #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs            #-}
+{-# LANGUAGE KindSignatures   #-}
+{-# LANGUAGE RankNTypes       #-}
+{-# LANGUAGE TypeOperators    #-}
 module ExSql.Syntax.ClassSpec
     ( spec
     ) where
 
 import Control.Monad.Reader.Class (MonadReader(..))
 import Control.Monad.Trans.Reader (ReaderT, runReaderT)
-import Data.Extensible (Member, Match(..), (:|)(..), (:*), (<:), nil, hindex)
+import Data.Extensible ((:*), (:|)(..), Match(..), Member, hindex, nil, (<:))
 import Data.Functor.Identity (Identity(..))
 import Data.Int (Int64)
 import Data.List (intercalate)
@@ -20,8 +18,8 @@ import qualified Data.List.NonEmpty as NonEmpty (toList)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import ExSql.Syntax.Arithmetic
-import ExSql.Syntax.Literal
 import ExSql.Syntax.Class
+import ExSql.Syntax.Literal
 import Test.Hspec
 
 newtype Printer (g :: * -> *) (v :: (* -> *) -> * -> *) = Printer { runPrinter :: forall a. v g a -> String }

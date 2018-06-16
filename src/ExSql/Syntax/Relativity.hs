@@ -13,6 +13,6 @@ data Associativity
     deriving (Show, Eq)
 
 data Relativity = Relativity
-    { relativityPrecedence :: Precedence
+    { relativityPrecedence    :: Precedence
     , relativityAssociativity :: Associativity
     } deriving (Show, Eq)

@@ -1,9 +1,7 @@
-{-# LANGUAGE
-    GADTs,
-    OverloadedStrings,
-    RankNTypes,
-    TypeOperators
-#-}
+{-# LANGUAGE GADTs             #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes        #-}
+{-# LANGUAGE TypeOperators     #-}
 module ExSql.Printer.Default
     ( Printer(..)
     , printExpr
@@ -34,21 +32,23 @@ import qualified Database.Persist as Persist (DBName(..))
 import qualified Database.Persist.Sql as Persist (fieldDBName)
 
 import ExSql.Printer.Common
-import ExSql.Printer.Types (Printer(..), PrinterType, ExprPrinterType, StatementBuilder(..))
 import ExSql.Printer.SelectQuery
-import ExSql.Syntax.Class (Expr(..), Node(..))
-import ExSql.Syntax.Relativity (Relativity(..), Precedence(..), Associativity(..))
+import ExSql.Printer.Types (ExprPrinterType, Printer(..), PrinterType,
+                            StatementBuilder(..))
 import ExSql.Syntax.Arithmetic
+import ExSql.Syntax.Class (Expr(..), Node(..))
 import ExSql.Syntax.Column
 import ExSql.Syntax.Comparison
 import ExSql.Syntax.Field
 import ExSql.Syntax.Function
 import ExSql.Syntax.In
-import ExSql.Syntax.Literal
-import ExSql.Syntax.Logical
-import ExSql.Syntax.SubSelect
 import ExSql.Syntax.Internal.Row
 import ExSql.Syntax.Internal.Types
+import ExSql.Syntax.Literal
+import ExSql.Syntax.Logical
+import ExSql.Syntax.Relativity (Associativity(..), Precedence(..),
+                                Relativity(..))
+import ExSql.Syntax.SubSelect
 
 printExpr :: Printer (Expr xs Identity) :* xs -> Maybe Relativity -> Maybe Relativity -> Expr xs Identity a -> StatementBuilder
 printExpr printers l r (Expr (EmbedAt membership (Node (Identity a)))) = runPrinter (hindex printers membership) l r a

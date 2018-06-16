@@ -1,8 +1,6 @@
-{-# LANGUAGE
-    FlexibleContexts,
-    GADTs,
-    RankNTypes
-#-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs            #-}
+{-# LANGUAGE RankNTypes       #-}
 module ExSql.Syntax.Logical
     ( Logical(..)
     , logicalNegation

@@ -1,9 +1,7 @@
-{-# LANGUAGE
-    FlexibleContexts,
-    GADTs,
-    KindSignatures,
-    RankNTypes
-#-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs            #-}
+{-# LANGUAGE KindSignatures   #-}
+{-# LANGUAGE RankNTypes       #-}
 module ExSql.Syntax.Literal
     ( Literal(..)
     , int
@@ -23,8 +21,8 @@ data Literal (g :: * -> *) a where
     LitValueList :: NonEmpty (g a) -> Literal g (ValueList a)
 
 instance Hoist Literal where
-    hoist _ (LitInt a) = LitInt a
-    hoist _ (LitBool a) = LitBool a
+    hoist _ (LitInt a)       = LitInt a
+    hoist _ (LitBool a)      = LitBool a
     hoist f (LitValueList a) = LitValueList (fmap f a)
 
 type Constructor g m a = (Ast g, Monad m, Member (NodeTypes g) Literal) => a -> g m a

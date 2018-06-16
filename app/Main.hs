@@ -1,25 +1,37 @@
-{-# LANGUAGE OverloadedStrings, DataKinds, FlexibleContexts, GADTs, GeneralizedNewtypeDeriving, KindSignatures, MultiParamTypeClasses, RankNTypes, TypeFamilies, TypeOperators, QuasiQuotes, TemplateHaskell #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE QuasiQuotes                #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE TypeOperators              #-}
 module Main where
 
 import qualified Control.Monad.Trans.State.Strict as State (runStateT)
 import Data.DList (DList)
+import Data.Extensible ((:*), Match(..), Member, nil, (<:))
+import Data.Functor.Identity (Identity(..))
 import Data.Text (Text)
 import qualified Data.Text as Text (unpack)
 import qualified Data.Text.Lazy.Builder as TLB
-import Data.Extensible (Member, Match(..), (:*), (<:), nil)
-import Data.Functor.Identity (Identity(..))
 import Database.Persist (Entity, PersistValue(..))
-import qualified Database.Persist.TH as Persist (mkPersist, persistLowerCase, share, sqlSettings)
-import ExSql.Syntax.Arithmetic
-import ExSql.Syntax.Comparison
-import ExSql.Syntax.Logical
-import ExSql.Syntax.Literal
-import ExSql.Syntax.Class
-import ExSql.Syntax.Relativity
-import ExSql.Syntax.SelectQuery
+import qualified Database.Persist.TH as Persist (mkPersist, persistLowerCase,
+                                                 share, sqlSettings)
 import ExSql.Printer.Default
 import ExSql.Printer.SelectQuery
 import ExSql.Printer.Types
+import ExSql.Syntax.Arithmetic
+import ExSql.Syntax.Class
+import ExSql.Syntax.Comparison
+import ExSql.Syntax.Literal
+import ExSql.Syntax.Logical
+import ExSql.Syntax.Relativity
+import ExSql.Syntax.SelectQuery
 
 Persist.share [Persist.mkPersist Persist.sqlSettings] [Persist.persistLowerCase|
 Person

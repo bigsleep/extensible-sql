@@ -1,8 +1,6 @@
-{-# LANGUAGE
-    FlexibleContexts,
-    GADTs,
-    RankNTypes
-#-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs            #-}
+{-# LANGUAGE RankNTypes       #-}
 module ExSql.Syntax.Comparison
     ( Comparison(..)
     , equality
@@ -22,11 +20,11 @@ data Comparison g a where
     LessThanOrEqual :: g a -> g a -> Comparison g Bool
 
 instance Hoist Comparison where
-    hoist f (Equality a0 a1) = Equality (f a0) (f a1)
-    hoist f (GreaterThan a0 a1) = GreaterThan (f a0) (f a1)
-    hoist f (LessThan a0 a1) = LessThan (f a0) (f a1)
+    hoist f (Equality a0 a1)           = Equality (f a0) (f a1)
+    hoist f (GreaterThan a0 a1)        = GreaterThan (f a0) (f a1)
+    hoist f (LessThan a0 a1)           = LessThan (f a0) (f a1)
     hoist f (GreaterThanOrEqual a0 a1) = GreaterThanOrEqual (f a0) (f a1)
-    hoist f (LessThanOrEqual a0 a1) = LessThanOrEqual (f a0) (f a1)
+    hoist f (LessThanOrEqual a0 a1)    = LessThanOrEqual (f a0) (f a1)
 
 type Bop g m a = BinaryOpType Comparison g m a Bool
 

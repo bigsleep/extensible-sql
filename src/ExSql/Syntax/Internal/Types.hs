@@ -12,7 +12,8 @@ module ExSql.Syntax.Internal.Types
 import Control.Monad
 import Control.Monad.Trans.State.Strict (StateT)
 import Data.Text (Text)
-import Database.Persist (Entity, PersistEntity(..), PersistField(..), PersistValue(..))
+import Database.Persist (Entity, PersistEntity(..), PersistField(..),
+                         PersistValue(..))
 import ExSql.Syntax.Class
 
 newtype RelationAlias a = RelationAlias Int
@@ -40,8 +41,8 @@ type PersistConvert a = StateT [PersistValue] (Either Text) a
 
 instance Hoist Sel where
     hoist _ (Star a) = Star a
-    hoist f (Sel a) = Sel (f a)
+    hoist f (Sel a)  = Sel (f a)
 
 instance Hoist SelWithAlias where
-    hoist _ (Star' a) = Star' a
+    hoist _ (Star' a)  = Star' a
     hoist f (Sel' a b) = Sel' (f a) b

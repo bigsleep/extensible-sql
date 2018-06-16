@@ -1,12 +1,10 @@
-{-# LANGUAGE
-    ConstraintKinds,
-    DataKinds,
-    FlexibleContexts,
-    GADTs,
-    RankNTypes,
-    TypeFamilies,
-    TypeOperators
-#-}
+{-# LANGUAGE ConstraintKinds  #-}
+{-# LANGUAGE DataKinds        #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs            #-}
+{-# LANGUAGE RankNTypes       #-}
+{-# LANGUAGE TypeFamilies     #-}
+{-# LANGUAGE TypeOperators    #-}
 module ExSql.Syntax.Class
     ( Ast(..)
     , Hoist(..)
@@ -19,7 +17,7 @@ module ExSql.Syntax.Class
     , hoistExpr
     ) where
 
-import Data.Extensible (Member, (:|)(..), embed)
+import Data.Extensible ((:|)(..), Member, embed)
 import GHC.TypeLits (Symbol)
 
 class Ast g where

@@ -1,14 +1,12 @@
-{-# LANGUAGE
-    FlexibleContexts,
-    FlexibleInstances,
-    GADTs,
-    GeneralizedNewtypeDeriving,
-    KindSignatures,
-    PatternSynonyms,
-    RankNTypes,
-    ScopedTypeVariables,
-    TypeFamilies
-#-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE PatternSynonyms            #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeFamilies               #-}
 module ExSql.Syntax.SelectQuery
     ( SelectQuery(..)
     , FieldsSelector(..)
@@ -26,16 +24,20 @@ module ExSql.Syntax.SelectQuery
 
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.State.Strict (StateT)
-import qualified Control.Monad.Trans.State.Strict as State (evalStateT, get, put, mapStateT)
+import qualified Control.Monad.Trans.State.Strict as State (evalStateT, get,
+                                                            mapStateT, put)
 import Control.Monad.Trans.Writer.Strict (Writer)
-import qualified Control.Monad.Trans.Writer.Strict as Writer (tell, mapWriter, runWriter)
-import Data.Int (Int64)
+import qualified Control.Monad.Trans.Writer.Strict as Writer (mapWriter,
+                                                              runWriter, tell)
 import Data.DList (DList)
+import Data.Int (Int64)
 import Data.Proxy (Proxy(..))
 import Data.Semigroup (Semigroup(..))
 import Database.Persist (Entity(..), PersistEntity(..), PersistField(..))
 import ExSql.Syntax.Class
-import ExSql.Syntax.Internal.Types (RelationAlias(..), FieldAlias(..), Ref(..), Sel(..), SelWithAlias(..), PersistConvert)
+import ExSql.Syntax.Internal.Types (FieldAlias(..), PersistConvert, Ref(..),
+                                    RelationAlias(..), Sel(..),
+                                    SelWithAlias(..))
 
 type family ResultType a where
     ResultType (a -> b) = ResultType b
@@ -81,14 +83,14 @@ instance Hoist SelectQuery where
         h = Writer.mapWriter $ \(x, SelectClauses w) -> (x, SelectClauses (fmap (hoist' f) w))
 
 hoist' :: (forall x. m x -> n x) -> SelectClause m -> SelectClause n
-hoist' f (Fields a) = Fields (hoist (hoist f) a)
-hoist' _ (From a) = From a
+hoist' f (Fields a)    = Fields (hoist (hoist f) a)
+hoist' _ (From a)      = From a
 hoist' f (FromSub i a) = FromSub i (hoist f a)
-hoist' f (Where a) = Where (f a)
+hoist' f (Where a)     = Where (f a)
 hoist' f (OrderBy a t) = OrderBy (f a) t
-hoist' _ (Limit a) = Limit a
-hoist' _ (Offset a) = Offset a
-hoist' _ Initial = Initial
+hoist' _ (Limit a)     = Limit a
+hoist' _ (Offset a)    = Offset a
+hoist' _ Initial       = Initial
 
 data OrderType = Asc | Desc deriving (Show, Eq)
 
@@ -128,7 +130,7 @@ resultAs selector cont (SelectQuery pre) = SelectQuery $ do
 
     aliasToRef :: SelWithAlias g a -> Ref a
     aliasToRef (Star' (RelationAlias i)) = RelationRef i
-    aliasToRef (Sel' _ (FieldAlias i)) = FieldRef i
+    aliasToRef (Sel' _ (FieldAlias i))   = FieldRef i
 
 where_ :: g Bool -> SelectQuery g a -> SelectQuery g a
 where_ a (SelectQuery q) = SelectQuery $ do
@@ -179,6 +181,6 @@ qualifySelectorRef tid (f :$: a) = f :$: qualifyRef tid a
 qualifySelectorRef tid (s :*: a) = qualifySelectorRef tid s :*: qualifyRef tid a
 
 qualifyRef :: Int -> Ref a -> Ref a
-qualifyRef tid (RelationRef _) = RelationRef tid
-qualifyRef tid (FieldRef fid) = QualifiedFieldRef tid fid
+qualifyRef tid (RelationRef _)           = RelationRef tid
+qualifyRef tid (FieldRef fid)            = QualifiedFieldRef tid fid
 qualifyRef tid (QualifiedFieldRef _ fid) = QualifiedFieldRef tid fid

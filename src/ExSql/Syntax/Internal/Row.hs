@@ -1,7 +1,5 @@
-{-# LANGUAGE
-    GADTs,
-    KindSignatures
-#-}
+{-# LANGUAGE GADTs          #-}
+{-# LANGUAGE KindSignatures #-}
 module ExSql.Syntax.Internal.Row
     ( Row(..)
     , row

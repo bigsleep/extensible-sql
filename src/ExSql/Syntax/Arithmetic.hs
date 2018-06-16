@@ -1,8 +1,6 @@
-{-# LANGUAGE
-    FlexibleContexts,
-    GADTs,
-    RankNTypes
-#-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs            #-}
+{-# LANGUAGE RankNTypes       #-}
 module ExSql.Syntax.Arithmetic
     ( Arithmetic(..)
     , negation
@@ -22,11 +20,11 @@ data Arithmetic g a where
     Division :: g a -> g a -> Arithmetic g a
 
 instance Hoist Arithmetic where
-    hoist f (Negation a) = Negation (f a)
-    hoist f (Addition a0 a1) = Addition (f a0) (f a1)
-    hoist f (Subtraction a0 a1) = Subtraction (f a0) (f a1)
+    hoist f (Negation a)           = Negation (f a)
+    hoist f (Addition a0 a1)       = Addition (f a0) (f a1)
+    hoist f (Subtraction a0 a1)    = Subtraction (f a0) (f a1)
     hoist f (Multiplication a0 a1) = Multiplication (f a0) (f a1)
-    hoist f (Division a0 a1) = Division (f a0) (f a1)
+    hoist f (Division a0 a1)       = Division (f a0) (f a1)
 
 type Uop g m a = UnaryOpType Arithmetic g m a a
 

@@ -1,18 +1,16 @@
-{-# LANGUAGE
-    DataKinds,
-    FlexibleContexts,
-    GADTs,
-    GeneralizedNewtypeDeriving,
-    KindSignatures,
-    MultiParamTypeClasses,
-    OverloadedStrings,
-    QuasiQuotes,
-    RankNTypes,
-    ScopedTypeVariables,
-    TemplateHaskell,
-    TypeFamilies,
-    TypeOperators
-#-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE QuasiQuotes                #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE TypeOperators              #-}
 module Common
     ( migrateAll
     , tests
@@ -27,10 +25,10 @@ module Common
     , JourneyId
     ) where
 
+import Control.Monad.Logger (NoLoggingT, runNoLoggingT)
 import Control.Monad.Trans.Reader (ReaderT)
 import Control.Monad.Trans.Resource (ResourceT, runResourceT)
 import qualified Control.Monad.Trans.State.Strict as State (evalStateT)
-import Control.Monad.Logger (NoLoggingT, runNoLoggingT)
 import Data.Conduit (runConduit, (.|))
 import qualified Data.Conduit.List as CL
 import qualified Data.DList as DList
@@ -40,11 +38,15 @@ import qualified Data.Text.Lazy as TL (toStrict)
 import qualified Data.Text.Lazy.Builder as TLB (singleton, toLazyText)
 import Data.Time (UTCTime)
 import qualified Database.Persist as Persist
-import qualified Database.Persist.Sql as Persist (SqlBackend, rawExecute, rawQuery, runSqlConn, runSqlPersistM)
-import qualified Database.Persist.TH as Persist (mkPersist, mkMigrate, persistLowerCase, share, sqlSettings)
+import qualified Database.Persist.Sql as Persist (SqlBackend, rawExecute,
+                                                  rawQuery, runSqlConn,
+                                                  runSqlPersistM)
+import qualified Database.Persist.TH as Persist (mkMigrate, mkPersist,
+                                                 persistLowerCase, share,
+                                                 sqlSettings)
 
-import ExSql.Printer.Types
 import ExSql.Printer.SelectQuery
+import ExSql.Printer.Types
 import ExSql.Syntax.Internal.Types
 import ExSql.Syntax.SelectQuery
 

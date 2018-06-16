@@ -1,8 +1,6 @@
-{-# LANGUAGE
-    FlexibleContexts,
-    GADTs,
-    KindSignatures
-#-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs            #-}
+{-# LANGUAGE KindSignatures   #-}
 module ExSql.Syntax.SubSelect
     ( SubSelect(..)
     , subSelect
@@ -20,7 +18,7 @@ data SubSelect (g :: * -> *) a where
     SubSelectValues :: SelectQuery g a -> SubSelect g (ValueList a)
 
 instance Hoist SubSelect where
-    hoist f (SubSelect query) = SubSelect (hoist f query)
+    hoist f (SubSelect query)       = SubSelect (hoist f query)
     hoist f (SubSelectValues query) = SubSelectValues (hoist f query)
 
 subSelect :: (Ast g, Monad m, Member (NodeTypes g) SubSelect)

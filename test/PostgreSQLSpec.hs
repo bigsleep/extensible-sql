@@ -1,14 +1,12 @@
-{-# LANGUAGE
-    OverloadedStrings
-#-}
+{-# LANGUAGE OverloadedStrings #-}
 module PostgreSQLSpec
     ( spec
     ) where
 
 import qualified Common
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad.Trans.Resource (runResourceT)
 import Control.Monad.Logger (runNoLoggingT)
+import Control.Monad.Trans.Resource (runResourceT)
 import Data.Text (Text)
 import qualified Data.Text as Text (pack)
 import Database.Persist

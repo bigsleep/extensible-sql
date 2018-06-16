@@ -1,8 +1,6 @@
-{-# LANGUAGE
-    FlexibleContexts,
-    GADTs,
-    RankNTypes
-#-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs            #-}
+{-# LANGUAGE RankNTypes       #-}
 module ExSql.Syntax.In
     ( In(..)
     , in_
@@ -10,8 +8,8 @@ module ExSql.Syntax.In
 
 import Data.Extensible (Member)
 import ExSql.Syntax.Class
-import ExSql.Syntax.Internal.Types (ValueList)
 import ExSql.Syntax.Internal.Row (Row(..))
+import ExSql.Syntax.Internal.Types (ValueList)
 
 data In g a where
     In :: Row g a -> g (ValueList a) -> In g Bool
