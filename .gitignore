@@ -3,3 +3,6 @@
 extensible-sql.cabal
 *~
 *.swp
+docker-compose.override.yml
+.nvimrc
+.vimrc

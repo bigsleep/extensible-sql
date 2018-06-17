@@ -11,7 +11,9 @@ RUN apt-get update && \
         libpq-dev \
         make \
         pkgconf \
-        xz-utils
+        xz-utils \
+        neovim \
+        tmux
 
 WORKDIR /app/
 
