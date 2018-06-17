@@ -153,10 +153,8 @@ toProxy _ = Proxy
 mkPersistConvert :: FieldsSelector Ref a -> PersistConvert a
 mkPersistConvert (f :$: a @ RelationRef {}) = f <$> mkPersistConvertEntity a
 mkPersistConvert (f :$: FieldRef {}) = mkPersistConvertInternal f
-mkPersistConvert (f :$: QualifiedFieldRef {}) = mkPersistConvertInternal f
 mkPersistConvert (s :*: a @ RelationRef {}) = mkPersistConvert s <*> mkPersistConvertEntity a
 mkPersistConvert (s :*: FieldRef {}) = mkPersistConvert s >>= mkPersistConvertInternal
-mkPersistConvert (s :*: QualifiedFieldRef {}) = mkPersistConvert s >>= mkPersistConvertInternal
 
 mkPersistConvertEntity :: (Persist.PersistEntity a) => Ref (Persist.Entity a) -> PersistConvert (Persist.Entity a)
 mkPersistConvertEntity a = do

@@ -10,20 +10,20 @@ module ExSql.Syntax.Column
 import Data.Extensible (Member)
 import Database.Persist (Entity, PersistEntity(..))
 import ExSql.Syntax.Class
-import ExSql.Syntax.Internal.Types (Ref)
+import ExSql.Syntax.Internal.Types (RRef)
 
 data Column (g :: * -> *) a where
-    Column :: (PersistEntity record) => Ref (Entity record) -> EntityField record a -> Column g a
+    Column :: (PersistEntity record) => RRef (Entity record) -> EntityField record a -> Column g a
 
 instance Hoist Column where
     hoist _ (Column t a) = Column t a
 
 column :: (Ast g, Monad m, Member (NodeTypes g) Column, PersistEntity record)
-    => Ref (Entity record) -> EntityField record a -> g m a
+    => RRef (Entity record) -> EntityField record a -> g m a
 column t = mkAst . return . Column t
 
 (.^) :: (Ast g, Monad m, Member (NodeTypes g) Column, PersistEntity record)
-    => Ref (Entity record) -> EntityField record a -> g m a
+    => RRef (Entity record) -> EntityField record a -> g m a
 (.^) = column
 
 infixl 9 .^

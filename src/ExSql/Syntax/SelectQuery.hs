@@ -35,9 +35,9 @@ import Data.Proxy (Proxy(..))
 import Data.Semigroup (Semigroup(..))
 import Database.Persist (Entity(..), PersistEntity(..), PersistField(..))
 import ExSql.Syntax.Class
-import ExSql.Syntax.Internal.Types (FieldAlias(..), PersistConvert, Ref(..),
-                                    RelationAlias(..), Sel(..),
-                                    SelWithAlias(..))
+import ExSql.Syntax.Internal.Types (FRef(..), FieldAlias(..), PersistConvert,
+                                    RRef(..), Ref(..), RelationAlias(..),
+                                    Sel(..), SelWithAlias(..))
 
 type family ResultType a where
     ResultType (a -> b) = ResultType b
@@ -98,7 +98,7 @@ selectFrom :: forall a g record. (PersistEntity record) => (Ref (Entity record) 
 selectFrom f = SelectQuery $ do
     (i, j) <- State.get
     State.put (i + 1, j)
-    let ref = RelationRef i :: Ref (Entity record)
+    let ref = RelationRef (RRef i) :: Ref (Entity record)
         alias = RelationAlias i :: RelationAlias (Entity record)
         sref = id :$: ref
     lift . Writer.tell . SelectClauses . return . From $ alias
@@ -129,8 +129,8 @@ resultAs selector cont (SelectQuery pre) = SelectQuery $ do
         return selectorWithAlias
 
     aliasToRef :: SelWithAlias g a -> Ref a
-    aliasToRef (Star' (RelationAlias i)) = RelationRef i
-    aliasToRef (Sel' _ (FieldAlias i))   = FieldRef i
+    aliasToRef (Star' (RelationAlias i)) = RelationRef (RRef i)
+    aliasToRef (Sel' _ (FieldAlias i))   = FieldRef (FRef i)
 
 where_ :: g Bool -> SelectQuery g a -> SelectQuery g a
 where_ a (SelectQuery q) = SelectQuery $ do
@@ -181,6 +181,6 @@ qualifySelectorRef tid (f :$: a) = f :$: qualifyRef tid a
 qualifySelectorRef tid (s :*: a) = qualifySelectorRef tid s :*: qualifyRef tid a
 
 qualifyRef :: Int -> Ref a -> Ref a
-qualifyRef tid (RelationRef _)           = RelationRef tid
-qualifyRef tid (FieldRef fid)            = QualifiedFieldRef tid fid
-qualifyRef tid (QualifiedFieldRef _ fid) = QualifiedFieldRef tid fid
+qualifyRef tid (RelationRef _)         = RelationRef (RRef tid)
+qualifyRef tid (FieldRef (FRef fid))   = FieldRef (QRef tid fid)
+qualifyRef tid (FieldRef (QRef _ fid)) = FieldRef (QRef tid fid)
