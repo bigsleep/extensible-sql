@@ -18,7 +18,6 @@ module ExSql.Syntax.Class
     ) where
 
 import Data.Extensible ((:|)(..), Member, embed)
-import GHC.TypeLits (Symbol)
 
 class Ast g where
     type NodeTypes g :: [(* -> *) -> * -> *]

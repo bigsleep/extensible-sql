@@ -11,7 +11,6 @@ module ExSql.Syntax.Internal.Types
     , ValueList
     ) where
 
-import Control.Monad
 import Control.Monad.Trans.State.Strict (StateT)
 import Data.Text (Text)
 import Database.Persist (Entity, PersistEntity(..), PersistField(..),

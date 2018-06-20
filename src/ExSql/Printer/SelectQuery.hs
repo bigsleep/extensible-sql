@@ -15,40 +15,28 @@ module ExSql.Printer.SelectQuery
 
 import Control.Monad (MonadPlus(..))
 import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.Reader (ReaderT)
-import qualified Control.Monad.Trans.Reader as Reader (ask, runReaderT)
-import Control.Monad.Trans.State.Strict (State, StateT)
 import qualified Control.Monad.Trans.State.Strict as State (evalStateT, get,
-                                                            modify', put)
-import Control.Monad.Trans.Writer.Strict (Writer)
-import qualified Control.Monad.Trans.Writer.Strict as Writer (runWriter, tell)
+                                                            put)
+import qualified Control.Monad.Trans.Writer.Strict as Writer (runWriter)
 import Data.DList (DList)
 import qualified Data.DList as DList
-import Data.Foldable (fold)
-import Data.Functor.Identity (Identity(..))
 import Data.Int (Int64)
 import Data.List (intersperse, uncons)
 import Data.Maybe (maybe)
 import Data.Proxy (Proxy(..))
 import Data.Semigroup (Semigroup(..))
-import Data.Text (Text)
-import qualified Data.Text as Text (unpack)
 import qualified Data.Text.Lazy.Builder as TLB
 import qualified Data.Text.Lazy.Builder.Int as TLB
 import qualified Database.Persist as Persist (DBName(..), Entity(..),
                                               EntityDef(..), PersistEntity(..),
-                                              PersistField(..),
-                                              PersistValue(..))
-import qualified Database.Persist.Sql as Persist (tableDBName)
+                                              PersistField(..))
 import qualified Database.Persist.Sql.Util as Persist (entityColumnCount,
                                                        parseEntityValues)
 import Safe.Exact (splitAtExactMay)
 
 import ExSql.Printer.Common
 import ExSql.Printer.Types
-import ExSql.Syntax.Class
 import ExSql.Syntax.Internal.Types
-import ExSql.Syntax.Relativity
 import ExSql.Syntax.SelectQuery (FieldsSelector(..), OrderType(..),
                                  SelectQuery(..))
 import qualified ExSql.Syntax.SelectQuery as Syntax

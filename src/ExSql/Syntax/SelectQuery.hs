@@ -31,13 +31,12 @@ import qualified Control.Monad.Trans.Writer.Strict as Writer (mapWriter,
                                                               runWriter, tell)
 import Data.DList (DList)
 import Data.Int (Int64)
-import Data.Proxy (Proxy(..))
 import Data.Semigroup (Semigroup(..))
-import Database.Persist (Entity(..), PersistEntity(..), PersistField(..))
+import Database.Persist (Entity(..), PersistEntity(..))
 import ExSql.Syntax.Class
-import ExSql.Syntax.Internal.Types (FRef(..), FieldAlias(..), PersistConvert,
-                                    RRef(..), Ref(..), RelationAlias(..),
-                                    Sel(..), SelWithAlias(..))
+import ExSql.Syntax.Internal.Types (FRef(..), FieldAlias(..), RRef(..), Ref(..),
+                                    RelationAlias(..), Sel(..),
+                                    SelWithAlias(..))
 
 type family ResultType a where
     ResultType (a -> b) = ResultType b

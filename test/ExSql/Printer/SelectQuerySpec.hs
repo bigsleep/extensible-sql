@@ -35,7 +35,7 @@ import ExSql.Syntax.Internal.Types
 import ExSql.Syntax.Relativity
 import ExSql.Syntax.SelectQuery
 
-import Test.Hspec hiding (FieldsSelector)
+import Test.Hspec
 
 Persist.share [Persist.mkPersist Persist.sqlSettings] [Persist.persistLowerCase|
 Person

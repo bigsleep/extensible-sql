@@ -16,16 +16,12 @@ module ExSql.Printer.Default
     , printLogical
     ) where
 
-import Data.DList (DList)
-import qualified Data.DList as DList
 import Data.Extensible ((:*), (:|)(..), hindex)
 import Data.Functor.Identity (Identity(..))
-import Data.Int (Int64)
 import qualified Data.List as List (intersperse)
 import qualified Data.List.NonEmpty as NonEmpty (toList)
 import Data.Text (Text)
 import qualified Data.Text.Lazy.Builder as TLB
-import qualified Data.Text.Lazy.Builder.Int as TLB
 
 import Database.Persist (PersistValue(..))
 import qualified Database.Persist as Persist (DBName(..))
