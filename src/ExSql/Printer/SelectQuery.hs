@@ -127,7 +127,7 @@ renderSelect p query = (convert, clauses)
 
 renderSelectClause :: ExprPrinterType g -> Syntax.SelectClause g -> SelectClauses
 renderSelectClause p (Syntax.Fields fs) = mempty { scField = renderSelectorFields p fs }
-renderSelectClause _ (Syntax.From a) = mempty { scFrom = renderFrom a }
+renderSelectClause _ (Syntax.From i a) = mempty { scFrom = renderFrom i a }
 renderSelectClause p (Syntax.FromSub i q) = mempty { scFrom = renderFromSub p i q }
 renderSelectClause p (Syntax.Where w) = mempty { scWhere = Clause . return . p Nothing Nothing $ w }
 renderSelectClause p (Syntax.OrderBy a t) = mempty { scOrderBy = OrderByClause . return $ (p Nothing Nothing a, t) }
@@ -139,12 +139,14 @@ toProxy :: f a -> Proxy a
 toProxy _ = Proxy
 
 mkPersistConvert :: FieldsSelector Ref a -> PersistConvert a
-mkPersistConvert (f :$: a @ RelationRef {}) = f <$> mkPersistConvertEntity a
+mkPersistConvert (f :$: RelationRef a @ RRef {}) = f <$> mkPersistConvertEntity a
+mkPersistConvert (f :$: RelationRef (RRefSub _ ref)) = f <$> mkPersistConvert ref
 mkPersistConvert (f :$: FieldRef {}) = mkPersistConvertInternal f
-mkPersistConvert (s :*: a @ RelationRef {}) = mkPersistConvert s <*> mkPersistConvertEntity a
+mkPersistConvert (s :*: RelationRef a @ RRef {}) = mkPersistConvert s <*> mkPersistConvertEntity a
+mkPersistConvert (s :*: RelationRef (RRefSub _ ref)) = mkPersistConvert s <*> mkPersistConvert ref
 mkPersistConvert (s :*: FieldRef {}) = mkPersistConvert s >>= mkPersistConvertInternal
 
-mkPersistConvertEntity :: (Persist.PersistEntity a) => Ref (Persist.Entity a) -> PersistConvert (Persist.Entity a)
+mkPersistConvertEntity :: (Persist.PersistEntity a) => RRef (Persist.Entity a) -> PersistConvert (Persist.Entity a)
 mkPersistConvertEntity a = do
     let def = Persist.entityDef . fmap Persist.entityVal . toProxy $ a
         colNum = Persist.entityColumnCount def
@@ -161,8 +163,8 @@ mkPersistConvertInternal f = do
     r <- lift . Persist.fromPersistValue $ val
     return (f r)
 
-renderFrom :: (Persist.PersistEntity record) => RelationAlias (Persist.Entity record) -> Clause
-renderFrom ref @ (RelationAlias eid) =
+renderFrom :: (Persist.PersistEntity record) => Int -> proxy (Persist.Entity record) -> Clause
+renderFrom eid ref =
     let tableName = Persist.unDBName . Persist.entityDB . Persist.entityDef . fmap Persist.entityVal . toProxy $ ref
         alias = printFromAlias eid
         a = TLB.fromText tableName <> TLB.fromText " AS " <> alias
@@ -184,7 +186,11 @@ renderSelectorFields p (s :*: Sel' a alias) =
     renderSelectorFields p s <> renderFieldClause (p Nothing Nothing a) alias
 
 renderFieldWildcard :: RelationAlias a -> Clause
-renderFieldWildcard (RelationAlias eid) =
+renderFieldWildcard (RelationAlias eid)      = renderFieldWildcardInternal eid
+renderFieldWildcard (RelationAliasSub eid _) = renderFieldWildcardInternal eid
+
+renderFieldWildcardInternal :: Int -> Clause
+renderFieldWildcardInternal eid =
     let alias = printFromAlias eid
         a = alias <> TLB.fromText ".*"
     in Clause . return . StatementBuilder $ (a, mempty)

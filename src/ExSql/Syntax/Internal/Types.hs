@@ -1,11 +1,18 @@
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs             #-}
+{-# LANGUAGE TypeFamilies      #-}
 module ExSql.Syntax.Internal.Types
     ( FRef(..)
     , FieldAlias(..)
+    , FieldsSelector(..)
+    , KnownConstructor(..)
     , PersistConvert
-    , Ref(..)
     , RRef(..)
+    , Ref(..)
     , RelationAlias(..)
+    , ResultType
+    , SResult
     , Sel(..)
     , SelWithAlias(..)
     , ValueList
@@ -17,11 +24,13 @@ import Database.Persist (Entity, PersistEntity(..), PersistField(..),
                          PersistValue(..))
 import ExSql.Syntax.Class
 
-newtype RelationAlias a = RelationAlias Int
-    deriving (Show, Eq)
+data RelationAlias a where
+    RelationAlias :: (PersistEntity a) => Int -> RelationAlias (Entity a)
+    RelationAliasSub :: Int -> FieldsSelector Ref a -> RelationAlias a
 
-newtype RRef a = RRef Int
-    deriving (Show, Eq)
+data RRef a where
+    RRef :: (PersistEntity a) => Int -> RRef (Entity a)
+    RRefSub :: Int -> FieldsSelector Ref a -> RRef a
 
 newtype FieldAlias a = FieldAlias Int
     deriving (Show, Eq)
@@ -30,15 +39,15 @@ data FRef a = FRef Int | QRef Int Int
     deriving (Show, Eq)
 
 data Ref a where
-    RelationRef :: (PersistEntity a) => RRef (Entity a) -> Ref (Entity a)
+    RelationRef :: RRef a -> Ref a
     FieldRef :: (PersistField a) => FRef a -> Ref a
 
 data Sel g a where
-    Star :: (PersistEntity a) => RelationAlias (Entity a) -> Sel g (Entity a)
+    Star :: RelationAlias a -> Sel g a
     Sel :: (PersistField a) => g a -> Sel g a
 
 data SelWithAlias g a where
-    Star' :: (PersistEntity a) => RelationAlias (Entity a) -> SelWithAlias g (Entity a)
+    Star' :: RelationAlias a -> SelWithAlias g a
     Sel' :: (PersistField a) => g a -> FieldAlias a -> SelWithAlias g a
 
 data ValueList a
@@ -52,3 +61,34 @@ instance Hoist Sel where
 instance Hoist SelWithAlias where
     hoist _ (Star' a)  = Star' a
     hoist f (Sel' a b) = Sel' (f a) b
+
+data FieldsSelector g x where
+    (:$:) :: (KnownConstructor (SResult (ResultType b)), ConstructorType (SResult (ResultType b)) ~ (a -> b)) => (a -> b) -> g a -> FieldsSelector g b
+    (:*:) :: (KnownConstructor (SResult (ResultType b))) => FieldsSelector g (a -> b) -> g a -> FieldsSelector g b
+
+infixl 4 :$:, :*:
+
+instance Hoist FieldsSelector where
+    hoist f (g :$: a) = g :$: f a
+    hoist f (s :*: a) = hoist f s :*: f a
+
+type family ResultType a where
+    ResultType (a -> b) = ResultType b
+    ResultType a = a
+
+class KnownConstructor a where
+    type ConstructorType a
+
+data SResult a
+
+instance KnownConstructor (SResult (a, b)) where
+    type ConstructorType (SResult (a, b)) = (a -> b -> (a, b))
+
+instance KnownConstructor (SResult (a, b, c)) where
+    type ConstructorType (SResult (a, b, c)) = (a -> b -> c -> (a, b, c))
+
+instance KnownConstructor (SResult (a, b, c, d)) where
+    type ConstructorType (SResult (a, b, c, d)) = (a -> b -> c -> d -> (a, b, c, d))
+
+instance KnownConstructor (SResult (Entity a)) where
+    type ConstructorType (SResult (Entity a)) = (Entity a -> Entity a)

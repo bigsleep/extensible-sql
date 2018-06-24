@@ -34,30 +34,7 @@ import Data.Int (Int64)
 import Data.Semigroup (Semigroup(..))
 import Database.Persist (Entity(..), PersistEntity(..))
 import ExSql.Syntax.Class
-import ExSql.Syntax.Internal.Types (FRef(..), FieldAlias(..), RRef(..), Ref(..),
-                                    RelationAlias(..), Sel(..),
-                                    SelWithAlias(..))
-
-type family ResultType a where
-    ResultType (a -> b) = ResultType b
-    ResultType a = a
-
-class KnownConstructor a where
-    type ConstructorType a
-
-data SResult a
-
-instance KnownConstructor (SResult (a, b)) where
-    type ConstructorType (SResult (a, b)) = (a -> b -> (a, b))
-
-instance KnownConstructor (SResult (a, b, c)) where
-    type ConstructorType (SResult (a, b, c)) = (a -> b -> c -> (a, b, c))
-
-instance KnownConstructor (SResult (a, b, c, d)) where
-    type ConstructorType (SResult (a, b, c, d)) = (a -> b -> c -> d -> (a, b, c, d))
-
-instance KnownConstructor (SResult (Entity a)) where
-    type ConstructorType (SResult (Entity a)) = (Entity a -> Entity a)
+import ExSql.Syntax.Internal.Types
 
 newtype SelectQuery (g :: * -> *) a = SelectQuery
     { unSelectQuery :: StateT (Int, Int) (Writer (SelectClauses g)) (FieldsSelector Ref a)
@@ -65,7 +42,7 @@ newtype SelectQuery (g :: * -> *) a = SelectQuery
 
 data SelectClause (g :: * -> *) where
     Fields :: FieldsSelector (SelWithAlias g) a -> SelectClause g
-    From :: (PersistEntity record) => RelationAlias (Entity record) -> SelectClause g
+    From :: (PersistEntity record) => Int -> proxy (Entity record) -> SelectClause g
     FromSub :: Int -> SelectQuery g a -> SelectClause g
     Where :: g Bool -> SelectClause g
     OrderBy :: g b -> OrderType -> SelectClause g
@@ -83,7 +60,7 @@ instance Hoist SelectQuery where
 
 hoist' :: (forall x. m x -> n x) -> SelectClause m -> SelectClause n
 hoist' f (Fields a)    = Fields (hoist (hoist f) a)
-hoist' _ (From a)      = From a
+hoist' _ (From i a)    = From i a
 hoist' f (FromSub i a) = FromSub i (hoist f a)
 hoist' f (Where a)     = Where (f a)
 hoist' f (OrderBy a t) = OrderBy (f a) t
@@ -93,24 +70,25 @@ hoist' _ Initial       = Initial
 
 data OrderType = Asc | Desc deriving (Show, Eq)
 
-selectFrom :: forall a g record. (PersistEntity record) => (Ref (Entity record) -> SelectQuery g (Entity record) -> SelectQuery g a) -> SelectQuery g a
+selectFrom :: forall a g record. (PersistEntity record) => (Ref (Entity record) -> RelationAlias (Entity record) -> SelectQuery g (Entity record) -> SelectQuery g a) -> SelectQuery g a
 selectFrom f = SelectQuery $ do
     (i, j) <- State.get
     State.put (i + 1, j)
     let ref = RelationRef (RRef i) :: Ref (Entity record)
         alias = RelationAlias i :: RelationAlias (Entity record)
         sref = id :$: ref
-    lift . Writer.tell . SelectClauses . return . From $ alias
-    unSelectQuery . f ref . SelectQuery . return $ sref
+    lift . Writer.tell . SelectClauses . return $ From i alias
+    unSelectQuery . f ref alias . SelectQuery . return $ sref
 
-selectFromSub :: SelectQuery g b -> (FieldsSelector Ref b -> SelectQuery g b -> SelectQuery g a) -> SelectQuery g a
+selectFromSub :: SelectQuery g b -> (FieldsSelector Ref b -> RelationAlias b -> SelectQuery g b -> SelectQuery g a) -> SelectQuery g a
 selectFromSub sub f = SelectQuery $ do
     (i, j) <- State.get
     State.put (i + 1, j)
     let (sref, _) = Writer.runWriter . flip State.evalStateT (0, 0) . unSelectQuery $ sub
         qref = qualifySelectorRef i sref
+        alias = RelationAliasSub i qref
     lift . Writer.tell . SelectClauses . return . FromSub i $ sub
-    unSelectQuery . f qref . SelectQuery . return $ qref
+    unSelectQuery . f qref alias . SelectQuery . return $ qref
 
 resultAs :: FieldsSelector (Sel g) a1 -> (FieldsSelector Ref a1 -> SelectQuery g a1 -> SelectQuery g a2) -> SelectQuery g a0 -> SelectQuery g a2
 resultAs selector cont (SelectQuery pre) = SelectQuery $ do
@@ -128,8 +106,9 @@ resultAs selector cont (SelectQuery pre) = SelectQuery $ do
         return selectorWithAlias
 
     aliasToRef :: SelWithAlias g a -> Ref a
-    aliasToRef (Star' (RelationAlias i)) = RelationRef (RRef i)
-    aliasToRef (Sel' _ (FieldAlias i))   = FieldRef (FRef i)
+    aliasToRef (Star' (RelationAlias i))        = RelationRef (RRef i)
+    aliasToRef (Star' (RelationAliasSub i ref)) = RelationRef (RRefSub i ref)
+    aliasToRef (Sel' _ (FieldAlias i))          = FieldRef (FRef i)
 
 where_ :: g Bool -> SelectQuery g a -> SelectQuery g a
 where_ a (SelectQuery q) = SelectQuery $ do
@@ -155,16 +134,6 @@ offset a (SelectQuery q) = SelectQuery $ do
     lift . Writer.tell . SelectClauses . return . Offset $ a
     return r
 
-data FieldsSelector g x where
-    (:$:) :: (KnownConstructor (SResult (ResultType b)), ConstructorType (SResult (ResultType b)) ~ (a -> b)) => (a -> b) -> g a -> FieldsSelector g b
-    (:*:) :: (KnownConstructor (SResult (ResultType b))) => FieldsSelector g (a -> b) -> g a -> FieldsSelector g b
-
-infixl 4 :$:, :*:
-
-instance Hoist FieldsSelector where
-    hoist f (g :$: a) = g :$: f a
-    hoist f (s :*: a) = hoist f s :*: f a
-
 mkSelectorWithAlias :: Int -> FieldsSelector (Sel g) a -> (FieldsSelector (SelWithAlias g) a, Int)
 mkSelectorWithAlias i (f :$: Star a) = (f :$: Star' a, i)
 mkSelectorWithAlias i (f :$: Sel a) = (f :$: Sel' a (FieldAlias i), i + 1)
@@ -180,6 +149,7 @@ qualifySelectorRef tid (f :$: a) = f :$: qualifyRef tid a
 qualifySelectorRef tid (s :*: a) = qualifySelectorRef tid s :*: qualifyRef tid a
 
 qualifyRef :: Int -> Ref a -> Ref a
-qualifyRef tid (RelationRef _)         = RelationRef (RRef tid)
-qualifyRef tid (FieldRef (FRef fid))   = FieldRef (QRef tid fid)
-qualifyRef tid (FieldRef (QRef _ fid)) = FieldRef (QRef tid fid)
+qualifyRef tid (RelationRef RRef {})         = RelationRef (RRef tid)
+qualifyRef tid (RelationRef (RRefSub _ ref)) = RelationRef (RRefSub tid ref)
+qualifyRef tid (FieldRef (FRef fid))         = FieldRef (QRef tid fid)
+qualifyRef tid (FieldRef (QRef _ fid))       = FieldRef (QRef tid fid)

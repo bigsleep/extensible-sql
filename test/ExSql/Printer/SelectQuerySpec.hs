@@ -63,18 +63,18 @@ pe _ _ (F (FieldRef (QRef tid fid))) =
     in StatementBuilder (x, mempty)
 
 sq1 :: SelectQuery Identity (Entity Person)
-sq1 = selectFrom $ const id
+sq1 = selectFrom $ \_ _ -> id
 
 sq2 :: SelectQuery E (Int, Text, Int)
-sq2 = selectFrom $ \(_ :: Ref (Entity Person)) -> resultAs ((,,) :$: Sel (Lit 1) :*: Sel (Lit "a") :*: Sel (Lit 2)) $ const id
+sq2 = selectFrom $ \(_ :: Ref (Entity Person)) _ -> resultAs ((,,) :$: Sel (Lit 1) :*: Sel (Lit "a") :*: Sel (Lit 2)) $ const id
 
 sq3 :: SelectQuery E (Text, Int)
-sq3 = selectFrom $ \(ref :: Ref (Entity Person)) ->
+sq3 = selectFrom $ \(ref :: Ref (Entity Person)) _ ->
         resultAs ((,) :$: Sel (Col ref PersonName) :*: Sel (Col ref PersonAge)) $
             \(_ :$: f1 :*: _) -> orderBy (F f1) Asc
 
 sq4 :: SelectQuery E (Int, Text)
-sq4 = selectFromSub sq3 $ \(_ :$: f1 :*: f2) ->
+sq4 = selectFromSub sq3 $ \(_ :$: f1 :*: f2) _ ->
         resultAs ((,) :$: Sel (F f2) :*: Sel (F f1)) $ \(_ :$: f2' :*: f1') -> orderBy (F f1') Asc
 
 spec :: Spec

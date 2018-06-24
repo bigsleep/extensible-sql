@@ -162,14 +162,16 @@ printFunction p _ _ (Function6 fname a0 a1 a2 a3 a4 a5) =
     printFun fname [p Nothing Nothing a0, p Nothing Nothing a1, p Nothing Nothing a2, p Nothing Nothing a3, p Nothing Nothing a4, p Nothing Nothing a5]
 
 printColumn :: ExprPrinterType (Expr xs Identity) -> PrinterType (Expr xs Identity) Column a
-printColumn _ l r (Column (RRef tid) col) =
+printColumn _ l r (Column rref col) =
     StatementBuilder (handleBracket l c r x, mempty)
     where
     c = Relativity (Precedence 3) LeftToRight
     columnName = Persist.unDBName . Persist.fieldDBName $ col
-    x = printFromAlias tid
+    x = printFromAlias (getTid rref)
         `mappend` TLB.singleton '.'
         `mappend` TLB.fromText columnName
+    getTid (RRef tid)      = tid
+    getTid (RRefSub tid _) = tid
 
 printField :: ExprPrinterType (Expr xs Identity) -> PrinterType (Expr xs Identity) Field a
 printField _ _ _ (Field (FRef fid)) = StatementBuilder (printFieldAlias fid, mempty)
