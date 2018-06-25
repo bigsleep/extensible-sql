@@ -25,6 +25,7 @@ module Common
     , JourneyId
     ) where
 
+import Control.Monad.Catch (finally)
 import Control.Monad.Logger (NoLoggingT, runNoLoggingT)
 import Control.Monad.Trans.Reader (ReaderT)
 import Control.Monad.Trans.Resource (ResourceT, runResourceT)
@@ -40,7 +41,8 @@ import Data.Time (UTCTime)
 import qualified Database.Persist as Persist
 import qualified Database.Persist.Sql as Persist (SqlBackend, rawExecute,
                                                   rawQuery, runSqlConn,
-                                                  runSqlPersistM)
+                                                  runSqlPersistM,
+                                                  transactionUndo)
 import qualified Database.Persist.TH as Persist (mkMigrate, mkPersist,
                                                  persistLowerCase, share,
                                                  sqlSettings)
@@ -121,4 +123,7 @@ testSelect1 run = it "select1" $ do
 
 tests :: Run -> Spec
 tests run = do
-    testSelect1 run
+    testSelect1 dryRun
+    where
+    dryRun :: Run
+    dryRun = run . flip finally Persist.transactionUndo

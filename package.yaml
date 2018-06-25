@@ -59,6 +59,7 @@ tests:
     dependencies:
     - conduit
     - containers
+    - exceptions
     - extensible-sql
     - hspec == 2.*
     - monad-logger
