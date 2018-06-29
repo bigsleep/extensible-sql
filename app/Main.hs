@@ -24,6 +24,7 @@ import ExSql.Printer.Types
 import ExSql.Syntax.Arithmetic
 import ExSql.Syntax.Class
 import ExSql.Syntax.Comparison
+import ExSql.Syntax.Internal.SelectQueryStage
 import ExSql.Syntax.Literal
 import ExSql.Syntax.Logical
 import ExSql.Syntax.Relativity
@@ -54,7 +55,7 @@ printers p
 pp :: Maybe Relativity -> Maybe Relativity -> Expr Nodes Identity a -> StatementBuilder
 pp = printExpr (printers pp)
 
-s1 :: SelectQuery E (Entity Person)
+s1 :: SelectQuery Neutral E (Entity Person)
 s1 = selectFrom $ \_ _ -> where_ e1
 
 main :: IO ()

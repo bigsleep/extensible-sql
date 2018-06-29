@@ -33,6 +33,7 @@ import qualified Database.Persist.TH as Persist (mkPersist, persistLowerCase,
 import ExSql.Printer.Common
 import ExSql.Printer.SelectQuery
 import ExSql.Printer.Types
+import ExSql.Syntax.Internal.SelectQueryStage
 import ExSql.Syntax.Internal.Types
 import ExSql.Syntax.Relativity
 import ExSql.Syntax.SelectQuery
@@ -65,22 +66,22 @@ pe _ _ (F (FieldRef (QRef tid fid))) =
     let x = printFromAlias tid `mappend` TLB.singleton '.' `mappend` printFieldAlias fid
     in StatementBuilder (x, mempty)
 
-sq1 :: SelectQuery E (Entity Person)
+sq1 :: SelectQuery Neutral E (Entity Person)
 sq1 = selectFrom $ \_ _ -> id
 
-sq2 :: SelectQuery E (Int, Text, Int)
+sq2 :: SelectQuery FieldsSpecified E (Int, Text, Int)
 sq2 = selectFrom $ \(_ :: Ref (Entity Person)) _ -> resultAs ((,,) :$: Sel (Lit 1) :*: Sel (Lit "a") :*: Sel (Lit 2)) $ const id
 
-sq3 :: SelectQuery E (Text, Int)
+sq3 :: SelectQuery FieldsSpecified E (Text, Int)
 sq3 = selectFrom $ \(ref :: Ref (Entity Person)) _ ->
         resultAs ((,) :$: Sel (Col ref PersonName) :*: Sel (Col ref PersonAge)) $
             \(_ :$: f1 :*: _) -> orderBy (F f1) Asc
 
-sq4 :: SelectQuery E (Int, Text)
+sq4 :: SelectQuery FieldsSpecified E (Int, Text)
 sq4 = selectFromSub sq3 $ \(_ :$: f1 :*: f2) _ ->
         resultAs ((,) :$: Sel (F f2) :*: Sel (F f1)) $ \(_ :$: f2' :*: f1') -> orderBy (F f1') Asc
 
-sq5 ::  SelectQuery E (Entity Person, Int)
+sq5 ::  SelectQuery FieldsSpecified E (Entity Person, Int)
 sq5 = selectFromSub sq1 $ \(_ :$: sq1ref) sq1alias ->
         resultAs ((,) :$: Star sq1alias :*: Sel (Col sq1ref PersonAge)) $ const id
 

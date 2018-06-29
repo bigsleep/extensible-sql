@@ -66,7 +66,7 @@ instance Monoid SelectClauses where
     mempty = SelectClauses mempty mempty mempty mempty (LimitClause Nothing Nothing)
     mappend = (<>)
 
-printSelect :: ExprPrinterType g -> Syntax.SelectQuery g a -> StatementBuilder
+printSelect :: ExprPrinterType g -> SelectQuery s g a -> StatementBuilder
 printSelect p query =
     let (_, sc) = renderSelect p query
     in printSelectClauses sc
@@ -118,7 +118,7 @@ printLimitClause (LimitClause (Just offset) Nothing) = StatementBuilder (TLB.fro
 printLimitClause (LimitClause Nothing (Just limit)) = StatementBuilder (TLB.fromText " LIMIT " <> TLB.decimal limit, mempty)
 printLimitClause (LimitClause (Just offset) (Just limit)) = StatementBuilder (TLB.fromText " OFFSET " <> TLB.decimal offset <> TLB.fromText " LIMIT " <> TLB.decimal limit, mempty)
 
-renderSelect :: ExprPrinterType g -> Syntax.SelectQuery g a -> (PersistConvert a, SelectClauses)
+renderSelect :: ExprPrinterType g -> SelectQuery s g a -> (PersistConvert a, SelectClauses)
 renderSelect p query = (convert, clauses)
     where
     (sref, Syntax.SelectClauses sclauses) = Writer.runWriter . flip State.evalStateT (0, 0) . unSelectQuery $ query
@@ -170,7 +170,7 @@ renderFrom eid ref =
         a = TLB.fromText tableName <> TLB.fromText " AS " <> alias
     in Clause . return . StatementBuilder $ (a, mempty)
 
-renderFromSub :: ExprPrinterType g -> Int -> SelectQuery g a -> Clause
+renderFromSub :: ExprPrinterType g -> Int -> SelectQuery s g a -> Clause
 renderFromSub p tid query =
     let alias = printFromAlias tid
         StatementBuilder (t, ps) = printSelect p query
