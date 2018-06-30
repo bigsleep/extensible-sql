@@ -8,18 +8,22 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeFamilies               #-}
 module ExSql.Syntax.SelectQuery
-    ( SelectQuery(..)
+    ( Field(..)
+    , SelectQuery(..)
     , FieldsSelector(..)
     , SelectClause(..)
     , SelectClauses(..)
     , OrderType(..)
-    , selectFrom
-    , selectFromSub
-    , resultAs
-    , where_
-    , orderBy
+    , (.^)
+    , column
+    , field
     , limit
     , offset
+    , orderBy
+    , resultAs
+    , selectFrom
+    , selectFromSub
+    , where_
     ) where
 
 import Control.Monad.Trans.Class (lift)
@@ -30,9 +34,10 @@ import Control.Monad.Trans.Writer.Strict (Writer)
 import qualified Control.Monad.Trans.Writer.Strict as Writer (mapWriter,
                                                               runWriter, tell)
 import Data.DList (DList)
+import Data.Extensible (Member)
 import Data.Int (Int64)
 import Data.Semigroup (Semigroup(..))
-import Database.Persist (Entity(..), PersistEntity(..))
+import Database.Persist (Entity(..), PersistEntity(..), PersistField(..))
 import ExSql.Syntax.Class
 import ExSql.Syntax.Internal.SelectQueryStage
 import ExSql.Syntax.Internal.Types
@@ -59,17 +64,15 @@ instance Hoist (SelectQuery s) where
         where
         h = Writer.mapWriter $ \(x, SelectClauses w) -> (x, SelectClauses (fmap (hoist' f) w))
 
-hoist' :: (forall x. m x -> n x) -> SelectClause m -> SelectClause n
-hoist' f (Fields a)    = Fields (hoist (hoist f) a)
-hoist' _ (From i a)    = From i a
-hoist' f (FromSub i a) = FromSub i (hoist f a)
-hoist' f (Where a)     = Where (f a)
-hoist' f (OrderBy a t) = OrderBy (f a) t
-hoist' _ (Limit a)     = Limit a
-hoist' _ (Offset a)    = Offset a
-hoist' _ Initial       = Initial
-
 data OrderType = Asc | Desc deriving (Show, Eq)
+
+data Field (g :: * -> *) a where
+    Field :: (PersistField a) => FRef a -> Field g a
+    Column :: (PersistEntity record) => RRef (Entity record) -> EntityField record a -> Field g a
+
+instance Hoist Field where
+    hoist _ (Field a)    = Field a
+    hoist _ (Column t a) = Column t a
 
 selectFrom
     :: forall a g record stage. (PersistEntity record)
@@ -144,6 +147,30 @@ offset a (SelectQuery q) = SelectQuery $ do
     r <- q
     lift . Writer.tell . SelectClauses . return . Offset $ a
     return r
+
+field :: (Ast g, Monad m, Member (NodeTypes g) Field, PersistField a)
+    => FRef a -> g m a
+field = mkAst . return . Field
+
+column :: (Ast g, Monad m, Member (NodeTypes g) Field, PersistEntity record)
+    => RRef (Entity record) -> EntityField record a -> g m a
+column t = mkAst . return . Column t
+
+(.^) :: (Ast g, Monad m, Member (NodeTypes g) Field, PersistEntity record)
+    => RRef (Entity record) -> EntityField record a -> g m a
+(.^) = column
+
+infixl 9 .^
+
+hoist' :: (forall x. m x -> n x) -> SelectClause m -> SelectClause n
+hoist' f (Fields a)    = Fields (hoist (hoist f) a)
+hoist' _ (From i a)    = From i a
+hoist' f (FromSub i a) = FromSub i (hoist f a)
+hoist' f (Where a)     = Where (f a)
+hoist' f (OrderBy a t) = OrderBy (f a) t
+hoist' _ (Limit a)     = Limit a
+hoist' _ (Offset a)    = Offset a
+hoist' _ Initial       = Initial
 
 mkSelectorWithAlias :: Int -> FieldsSelector (Sel g) a -> (FieldsSelector (SelWithAlias g) a, Int)
 mkSelectorWithAlias i (f :$: Star a) = (f :$: Star' a, i)

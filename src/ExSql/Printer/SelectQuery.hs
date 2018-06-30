@@ -6,6 +6,7 @@ module ExSql.Printer.SelectQuery
     ( Clause(..)
     , OrderByClause(..)
     , SelectClauses(..)
+    , printField
     , renderSelect
     , printFromAlias
     , printFieldAlias
@@ -20,6 +21,7 @@ import qualified Control.Monad.Trans.State.Strict as State (evalStateT, get,
 import qualified Control.Monad.Trans.Writer.Strict as Writer (runWriter)
 import Data.DList (DList)
 import qualified Data.DList as DList
+import Data.Functor.Identity (Identity(..))
 import Data.Int (Int64)
 import Data.List (intersperse, uncons)
 import Data.Maybe (maybe)
@@ -30,14 +32,18 @@ import qualified Data.Text.Lazy.Builder.Int as TLB
 import qualified Database.Persist as Persist (DBName(..), Entity(..),
                                               EntityDef(..), PersistEntity(..),
                                               PersistField(..))
+import qualified Database.Persist.Sql as Persist (fieldDBName)
 import qualified Database.Persist.Sql.Util as Persist (entityColumnCount,
                                                        parseEntityValues)
 import Safe.Exact (splitAtExactMay)
 
 import ExSql.Printer.Common
 import ExSql.Printer.Types
+import ExSql.Syntax.Class
 import ExSql.Syntax.Internal.Types
-import ExSql.Syntax.SelectQuery (FieldsSelector(..), OrderType(..),
+import ExSql.Syntax.Relativity (Associativity(..), Precedence(..),
+                                Relativity(..))
+import ExSql.Syntax.SelectQuery (Field(..), FieldsSelector(..), OrderType(..),
                                  SelectQuery(..))
 import qualified ExSql.Syntax.SelectQuery as Syntax
 
@@ -70,6 +76,24 @@ printSelect :: ExprPrinterType g -> SelectQuery s g a -> StatementBuilder
 printSelect p query =
     let (_, sc) = renderSelect p query
     in printSelectClauses sc
+
+printField :: ExprPrinterType (Expr xs Identity) -> PrinterType (Expr xs Identity) Field a
+printField _ _ _ (Field (FRef fid)) = StatementBuilder (printFieldAlias fid, mempty)
+printField _ l r (Field (QRef tid fid)) =
+    StatementBuilder (handleBracket l c r x, mempty)
+    where
+    c = Relativity (Precedence 3) LeftToRight
+    x = printFromAlias tid `mappend` printFieldAlias fid
+printField _ l r (Column rref col) =
+    StatementBuilder (handleBracket l c r x, mempty)
+    where
+    c = Relativity (Precedence 3) LeftToRight
+    columnName = Persist.unDBName . Persist.fieldDBName $ col
+    x = printFromAlias (getTid rref)
+        `mappend` TLB.singleton '.'
+        `mappend` TLB.fromText columnName
+    getTid (RRef tid)      = tid
+    getTid (RRefSub tid _) = tid
 
 printSelectClauses :: SelectClauses -> StatementBuilder
 printSelectClauses (SelectClauses field from where_ orderBy limit) =
