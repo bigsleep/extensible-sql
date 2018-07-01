@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs             #-}
+{-# LANGUAGE PatternSynonyms   #-}
 {-# LANGUAGE TypeFamilies      #-}
 module ExSql.Syntax.Internal.Types
     ( FRef(..)
@@ -16,9 +17,12 @@ module ExSql.Syntax.Internal.Types
     , Sel(..)
     , SelWithAlias(..)
     , ValueList
+    , pattern Nil
+    , pattern (:<)
     ) where
 
 import Control.Monad.Trans.State.Strict (StateT)
+import qualified Data.Extensible.HList as HList (HList(..))
 import Data.Text (Text)
 import Database.Persist (Entity, PersistEntity(..), PersistField(..),
                          PersistValue(..))
@@ -71,6 +75,9 @@ infixl 4 :$:, :*:
 instance Hoist FieldsSelector where
     hoist f (g :$: a) = g :$: f a
     hoist f (s :*: a) = hoist f s :*: f a
+
+pattern Nil = HList.HNil
+pattern h :< xs = HList.HCons h xs
 
 type family ResultType a where
     ResultType (a -> b) = ResultType b

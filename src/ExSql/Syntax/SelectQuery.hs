@@ -35,8 +35,10 @@ import qualified Control.Monad.Trans.Writer.Strict as Writer (mapWriter,
                                                               runWriter, tell)
 import Data.DList (DList)
 import Data.Extensible (Member)
+import qualified Data.Extensible.HList as HList (HList(..))
 import Data.Int (Int64)
 import Data.Semigroup (Semigroup(..))
+import Data.Text (Text)
 import Database.Persist (Entity(..), PersistEntity(..), PersistField(..))
 import ExSql.Syntax.Class
 import ExSql.Syntax.Internal.SelectQueryStage
@@ -73,6 +75,14 @@ data Field (g :: * -> *) a where
 instance Hoist Field where
     hoist _ (Field a)    = Field a
     hoist _ (Column t a) = Column t a
+
+newtype ARef g a = ARef (Field g a)
+
+data Aggr g a =
+    AggrRef (ARef g a) |
+    AggrFunc Text (g a)
+
+type ARefs g xs = HList.HList (ARef g) xs
 
 selectFrom
     :: forall a g record stage. (PersistEntity record)
