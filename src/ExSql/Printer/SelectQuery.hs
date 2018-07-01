@@ -2,6 +2,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 module ExSql.Printer.SelectQuery
     ( Clause(..)
     , OrderByClause(..)
@@ -21,6 +22,8 @@ import qualified Control.Monad.Trans.State.Strict as State (evalStateT, get,
 import qualified Control.Monad.Trans.Writer.Strict as Writer (runWriter)
 import Data.DList (DList)
 import qualified Data.DList as DList
+import Data.Extensible (Membership)
+import qualified Data.Extensible.HList as HList (HList(..), hfoldrWithIndex)
 import Data.Functor.Identity (Identity(..))
 import Data.Int (Int64)
 import Data.List (intersperse, uncons)
@@ -60,16 +63,17 @@ data SelectClauses = SelectClauses
     { scField   :: !Clause
     , scFrom    :: !Clause
     , scWhere   :: !Clause
+    , scGroupBy :: !Clause
     , scOrderBy :: !OrderByClause
     , scLimit   :: !LimitClause
     } deriving (Show, Eq)
 
 instance Semigroup SelectClauses where
-    (<>) (SelectClauses field0 from0 where0 orderBy0 (LimitClause offset0 limit0)) (SelectClauses field1 from1 where1 orderBy1 (LimitClause offset1 limit1)) =
-        SelectClauses (field0 <> field1) (from0 <> from1) (where0 <> where1) (orderBy0 <> orderBy1) (LimitClause (offset0 `mplus` offset1) (limit0 `mplus` limit1))
+    (<>) (SelectClauses field0 from0 where0 groupBy0 orderBy0 (LimitClause offset0 limit0)) (SelectClauses field1 from1 where1 groupBy1 orderBy1 (LimitClause offset1 limit1)) =
+        SelectClauses (field0 <> field1) (from0 <> from1) (where0 <> where1) (groupBy0 <> groupBy1) (orderBy0 <> orderBy1) (LimitClause (offset0 `mplus` offset1) (limit0 `mplus` limit1))
 
 instance Monoid SelectClauses where
-    mempty = SelectClauses mempty mempty mempty mempty (LimitClause Nothing Nothing)
+    mempty = SelectClauses mempty mempty mempty mempty mempty (LimitClause Nothing Nothing)
     mappend = (<>)
 
 printSelect :: ExprPrinterType g -> SelectQuery s g a -> StatementBuilder
@@ -77,7 +81,7 @@ printSelect p query =
     let (_, sc) = renderSelect p query
     in printSelectClauses sc
 
-printField :: ExprPrinterType (Expr xs Identity) -> PrinterType (Expr xs Identity) Field a
+printField :: ExprPrinterType g -> PrinterType g Field a
 printField _ _ _ (Field (FRef fid)) = StatementBuilder (printFieldAlias fid, mempty)
 printField _ l r (Field (QRef tid fid)) =
     StatementBuilder (handleBracket l c r x, mempty)
@@ -96,11 +100,12 @@ printField _ l r (Column rref col) =
     getTid (RRefSub tid _) = tid
 
 printSelectClauses :: SelectClauses -> StatementBuilder
-printSelectClauses (SelectClauses field from where_ orderBy limit) =
+printSelectClauses (SelectClauses field from where_ groupBy orderBy limit) =
     StatementBuilder ("SELECT ", mempty)
     <> printFieldClause field
     <> printFromClause from
     <> printWhereClause where_
+    <> printGroupByClause groupBy
     <> printOrderByClause orderBy
     <> printLimitClause limit
 
@@ -124,6 +129,14 @@ printWhereClause (Clause xs) = StatementBuilder (t, mconcat ps)
     (ts, ps) = unzip . map unStatementBuilder . DList.toList $ xs
     t = TLB.fromText " WHERE "
         <> (mconcat . intersperse (TLB.fromText " AND ") $ ts)
+
+printGroupByClause :: Clause -> StatementBuilder
+printGroupByClause (Clause DList.Nil) = mempty
+printGroupByClause (Clause xs) = StatementBuilder (t, mconcat ps)
+    where
+    (ts, ps) = unzip . map unStatementBuilder . DList.toList $ xs
+    t = TLB.fromText " GROUP BY "
+        <> (addBracket . mconcat . intersperse (TLB.fromText ", ") $ ts)
 
 printOrderByClause :: OrderByClause -> StatementBuilder
 printOrderByClause (OrderByClause DList.Nil) = mempty
@@ -154,6 +167,7 @@ renderSelectClause p (Syntax.Fields fs) = mempty { scField = renderSelectorField
 renderSelectClause _ (Syntax.From i a) = mempty { scFrom = renderFrom i a }
 renderSelectClause p (Syntax.FromSub i q) = mempty { scFrom = renderFromSub p i q }
 renderSelectClause p (Syntax.Where w) = mempty { scWhere = Clause . return . p Nothing Nothing $ w }
+renderSelectClause p (Syntax.GroupBy fs) = mempty { scGroupBy = renderAFields p fs }
 renderSelectClause p (Syntax.OrderBy a t) = mempty { scOrderBy = OrderByClause . return $ (p Nothing Nothing a, t) }
 renderSelectClause _ (Syntax.Limit limit) = mempty { scLimit = LimitClause Nothing (Just limit) }
 renderSelectClause _ (Syntax.Offset offset) = mempty { scLimit = LimitClause (Just offset) Nothing }
@@ -225,3 +239,9 @@ renderFieldClause a (FieldAlias fid) =
         StatementBuilder (e, ps) = a
         eas = e <> TLB.fromText " AS " <> alias
     in Clause . return . StatementBuilder $ (eas, ps)
+
+renderAFields :: forall g xs. ExprPrinterType g -> Syntax.AFields g xs -> Clause
+renderAFields p = HList.hfoldrWithIndex f mempty
+    where
+    f :: Membership xs x -> Field g x -> Clause -> Clause
+    f _ a r = r `mappend` (Clause . return $ printField p Nothing Nothing a)

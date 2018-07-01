@@ -24,6 +24,7 @@ module ExSql.Syntax.SelectQuery
     , selectFrom
     , selectFromSub
     , where_
+    , AFields(..)
     ) where
 
 import Control.Monad.Trans.Class (lift)
@@ -53,6 +54,7 @@ data SelectClause (g :: * -> *) where
     From :: (PersistEntity record) => Int -> proxy (Entity record) -> SelectClause g
     FromSub :: Int -> SelectQuery s g a -> SelectClause g
     Where :: g Bool -> SelectClause g
+    GroupBy :: AFields g xs -> SelectClause g
     OrderBy :: g b -> OrderType -> SelectClause g
     Limit :: Int64 -> SelectClause g
     Offset :: Int64 -> SelectClause g
@@ -81,6 +83,8 @@ newtype ARef g a = ARef (Field g a)
 data Aggr g a =
     AggrRef (ARef g a) |
     AggrFunc Text (g a)
+
+type AFields g xs = HList.HList (Field g) xs
 
 type ARefs g xs = HList.HList (ARef g) xs
 
