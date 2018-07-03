@@ -1,8 +1,12 @@
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GADTs             #-}
-{-# LANGUAGE PatternSynonyms   #-}
-{-# LANGUAGE TypeFamilies      #-}
+{-# LANGUAGE DataKinds            #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE GADTs                #-}
+{-# LANGUAGE PatternSynonyms      #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE TypeOperators        #-}
+{-# LANGUAGE UndecidableInstances #-}
 module ExSql.Syntax.Internal.Types
     ( FRef(..)
     , FieldAlias(..)
@@ -67,21 +71,30 @@ instance Hoist SelWithAlias where
     hoist f (Sel' a b) = Sel' (f a) b
 
 data FieldsSelector g x where
+    Raw :: FieldsSelector g [PersistValue]
     (:$:) :: (KnownConstructor (SResult (ResultType b)), ConstructorType (SResult (ResultType b)) ~ (a -> b)) => (a -> b) -> g a -> FieldsSelector g b
     (:*:) :: (KnownConstructor (SResult (ResultType b))) => FieldsSelector g (a -> b) -> g a -> FieldsSelector g b
 
 infixl 4 :$:, :*:
 
 instance Hoist FieldsSelector where
+    hoist _ Raw       = Raw
     hoist f (g :$: a) = g :$: f a
     hoist f (s :*: a) = hoist f s :*: f a
 
+pattern Nil :: HList.HList h '[]
 pattern Nil = HList.HNil
+
+pattern (:<) :: h x -> HList.HList h xs -> HList.HList h (x ': xs)
 pattern h :< xs = HList.HCons h xs
 
 type family ResultType a where
     ResultType (a -> b) = ResultType b
     ResultType a = a
+
+type family FunctionType (args :: [*]) result where
+    FunctionType (x ': xs) r = x -> FunctionType xs r
+    FunctionType '[] r = r
 
 class KnownConstructor a where
     type ConstructorType a

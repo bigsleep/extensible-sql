@@ -1,7 +1,7 @@
 module ExSql.Syntax.Internal.SelectQueryStage
     ( Neutral
     , FieldsSpecified
-    , Aggregated
+    , Aggregated(..)
     , AggFieldsSpecified
     ) where
 
@@ -10,6 +10,6 @@ data Neutral
 
 data FieldsSpecified
 
-data Aggregated
+data Aggregated = Aggregated
 
 data AggFieldsSpecified

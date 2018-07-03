@@ -17,6 +17,7 @@ module ExSql.Syntax.SelectQuery
     , (.^)
     , column
     , field
+    , groupBy
     , limit
     , offset
     , orderBy
@@ -24,10 +25,12 @@ module ExSql.Syntax.SelectQuery
     , selectFrom
     , selectFromSub
     , where_
-    , AFields(..)
+    , AFields
+    , ARefs
     ) where
 
 import Control.Monad.Trans.Class (lift)
+import Control.Monad.Trans.Reader (ReaderT, runReaderT)
 import Control.Monad.Trans.State.Strict (StateT)
 import qualified Control.Monad.Trans.State.Strict as State (evalStateT, get,
                                                             mapStateT, put)
@@ -36,11 +39,13 @@ import qualified Control.Monad.Trans.Writer.Strict as Writer (mapWriter,
                                                               runWriter, tell)
 import Data.DList (DList)
 import Data.Extensible (Member)
-import qualified Data.Extensible.HList as HList (HList(..))
+import qualified Data.Extensible.HList as HList (HList(..), htraverse)
+import Data.Functor.Identity (Identity(..))
 import Data.Int (Int64)
 import Data.Semigroup (Semigroup(..))
 import Data.Text (Text)
-import Database.Persist (Entity(..), PersistEntity(..), PersistField(..))
+import Database.Persist (Entity(..), PersistEntity(..), PersistField(..),
+                         PersistValue)
 import ExSql.Syntax.Class
 import ExSql.Syntax.Internal.SelectQueryStage
 import ExSql.Syntax.Internal.Types
@@ -80,9 +85,18 @@ instance Hoist Field where
 
 newtype ARef g a = ARef (Field g a)
 
-data Aggr g a =
-    AggrRef (ARef g a) |
-    AggrFunc Text (g a)
+instance Hoist ARef where
+    hoist f (ARef a) = ARef (hoist f a)
+
+data AggregateFunction g a where
+    AggFunction :: Text -> g a -> AggregateFunction g a
+    AggField :: ARef g a -> AggregateFunction g a
+    Count :: g a -> AggregateFunction g Int64
+
+instance Hoist AggregateFunction where
+    hoist f (AggFunction name e) = AggFunction name (f e)
+    hoist f (AggField ref)       = AggField (hoist f ref)
+    hoist f (Count e)            = Count (f e)
 
 type AFields g xs = HList.HList (Field g) xs
 
@@ -144,6 +158,20 @@ where_ a (SelectQuery q) = SelectQuery $ do
     lift . Writer.tell . SelectClauses . return $ Where a
     return r
 
+groupBy
+    :: (Ast g, m ~ ReaderT Aggregated n, Functor n, Member (NodeTypes g) AggregateFunction)
+    => AFields (g m) xs
+    -> (ARefs (g n) xs -> SelectQuery Aggregated (g n) [PersistValue] -> SelectQuery s (g n) a1)
+    -> SelectQuery Neutral (g n) a0
+    -> SelectQuery s (g n) a1
+groupBy fields cont (SelectQuery pre) = SelectQuery $ do
+    _ <- pre
+    let removeConstraint = hoist (hoistAst (`runReaderT` Aggregated))
+        fields' = runIdentity . HList.htraverse (return . removeConstraint) $ fields
+        ref = afieldsToARefs fields'
+    lift . Writer.tell . SelectClauses . return $ GroupBy fields'
+    unSelectQuery . cont ref . SelectQuery . return $ Raw
+
 orderBy :: g b -> OrderType -> SelectQuery s g a -> SelectQuery s g a
 orderBy a t (SelectQuery q) = SelectQuery $ do
     r <- q
@@ -181,12 +209,14 @@ hoist' f (Fields a)    = Fields (hoist (hoist f) a)
 hoist' _ (From i a)    = From i a
 hoist' f (FromSub i a) = FromSub i (hoist f a)
 hoist' f (Where a)     = Where (f a)
+hoist' f (GroupBy fs)  = GroupBy . runIdentity . HList.htraverse (Identity . hoist f) $ fs
 hoist' f (OrderBy a t) = OrderBy (f a) t
 hoist' _ (Limit a)     = Limit a
 hoist' _ (Offset a)    = Offset a
 hoist' _ Initial       = Initial
 
 mkSelectorWithAlias :: Int -> FieldsSelector (Sel g) a -> (FieldsSelector (SelWithAlias g) a, Int)
+mkSelectorWithAlias i Raw = (Raw, i)
 mkSelectorWithAlias i (f :$: Star a) = (f :$: Star' a, i)
 mkSelectorWithAlias i (f :$: Sel a) = (f :$: Sel' a (FieldAlias i), i + 1)
 mkSelectorWithAlias i (s :*: Star a) =
@@ -197,6 +227,7 @@ mkSelectorWithAlias i (s :*: Sel a) =
     in (r :*: Sel' a (FieldAlias next), next + 1)
 
 qualifySelectorRef :: Int -> FieldsSelector Ref a -> FieldsSelector Ref a
+qualifySelectorRef _ Raw = Raw
 qualifySelectorRef tid (f :$: a) = f :$: qualifyRef tid a
 qualifySelectorRef tid (s :*: a) = qualifySelectorRef tid s :*: qualifyRef tid a
 
@@ -205,3 +236,8 @@ qualifyRef tid (RelationRef RRef {})         = RelationRef (RRef tid)
 qualifyRef tid (RelationRef (RRefSub _ ref)) = RelationRef (RRefSub tid ref)
 qualifyRef tid (FieldRef (FRef fid))         = FieldRef (QRef tid fid)
 qualifyRef tid (FieldRef (QRef _ fid))       = FieldRef (QRef tid fid)
+
+afieldsToARefs :: AFields g xs -> ARefs g xs
+afieldsToARefs = runIdentity . HList.htraverse f
+    where
+    f a = Identity (ARef a)

@@ -22,6 +22,7 @@ import Data.Extensible ((:|)(..), Member, embed)
 class Ast g where
     type NodeTypes g :: [(* -> *) -> * -> *]
     mkAst :: (Monad m, Hoist v, Member (NodeTypes g) v) => m (v (g m) a) -> g m a
+    hoistAst :: (Functor n) => (forall x. m x -> n x) -> g m a -> g n a
 
 class Hoist (t :: (* -> *) -> * -> *) where
     hoist :: (forall x. f x -> g x) -> t f a -> t g a
@@ -34,6 +35,7 @@ newtype Expr xs m a = Expr { unExpr :: Node m (Expr xs m) a :| xs }
 instance Ast (Expr xs) where
     type NodeTypes (Expr xs) = xs
     mkAst = Expr . embed . Node
+    hoistAst = hoistExpr
 
 hoistExpr :: (Functor n) => (forall x. m x -> n x) -> Expr xs m a -> Expr xs n a
 hoistExpr f (Expr (EmbedAt p (Node m))) = Expr (EmbedAt p (Node (hoist (hoistExpr f) <$> f m)))

@@ -33,7 +33,6 @@ import ExSql.Syntax.Comparison
 import ExSql.Syntax.Function
 import ExSql.Syntax.In
 import ExSql.Syntax.Internal.Row
-import ExSql.Syntax.Internal.Types
 import ExSql.Syntax.Literal
 import ExSql.Syntax.Logical
 import ExSql.Syntax.Relativity (Associativity(..), Precedence(..),

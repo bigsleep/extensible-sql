@@ -23,8 +23,7 @@ import qualified Control.Monad.Trans.Writer.Strict as Writer (runWriter)
 import Data.DList (DList)
 import qualified Data.DList as DList
 import Data.Extensible (Membership)
-import qualified Data.Extensible.HList as HList (HList(..), hfoldrWithIndex)
-import Data.Functor.Identity (Identity(..))
+import qualified Data.Extensible.HList as HList (hfoldrWithIndex)
 import Data.Int (Int64)
 import Data.List (intersperse, uncons)
 import Data.Maybe (maybe)
@@ -42,7 +41,6 @@ import Safe.Exact (splitAtExactMay)
 
 import ExSql.Printer.Common
 import ExSql.Printer.Types
-import ExSql.Syntax.Class
 import ExSql.Syntax.Internal.Types
 import ExSql.Syntax.Relativity (Associativity(..), Precedence(..),
                                 Relativity(..))
@@ -177,6 +175,10 @@ toProxy :: f a -> Proxy a
 toProxy _ = Proxy
 
 mkPersistConvert :: FieldsSelector Ref a -> PersistConvert a
+mkPersistConvert Raw =  do
+    xs <- State.get
+    State.put mempty
+    return xs
 mkPersistConvert (f :$: RelationRef a @ RRef {}) = f <$> mkPersistConvertEntity a
 mkPersistConvert (f :$: RelationRef (RRefSub _ ref)) = f <$> mkPersistConvert ref
 mkPersistConvert (f :$: FieldRef {}) = mkPersistConvertInternal f
@@ -216,6 +218,7 @@ renderFromSub p tid query =
     in Clause . return . StatementBuilder $ (a, ps)
 
 renderSelectorFields :: ExprPrinterType g -> FieldsSelector (SelWithAlias g) a -> Clause
+renderSelectorFields _ Raw = mempty
 renderSelectorFields _ (_ :$: Star' alias) = renderFieldWildcard alias
 renderSelectorFields p (_ :$: Sel' a alias) = renderFieldClause (p Nothing Nothing a) alias
 renderSelectorFields p (s :*: Star' alias) =
