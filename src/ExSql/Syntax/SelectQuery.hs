@@ -3,6 +3,7 @@
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
@@ -25,6 +26,12 @@ module ExSql.Syntax.SelectQuery
     , selectFrom
     , selectFromSub
     , where_
+    , avg
+    , max
+    , min
+    , stddev
+    , variance
+    , count
     , AFields
     , ARefs
     ) where
@@ -49,6 +56,7 @@ import Database.Persist (Entity(..), PersistEntity(..), PersistField(..),
 import ExSql.Syntax.Class
 import ExSql.Syntax.Internal.SelectQueryStage
 import ExSql.Syntax.Internal.Types
+import Prelude hiding (max, min)
 
 newtype SelectQuery stage (g :: * -> *) a = SelectQuery
     { unSelectQuery :: StateT (Int, Int) (Writer (SelectClauses g)) (FieldsSelector Ref a)
@@ -203,6 +211,29 @@ column t = mkAst . return . Column t
 (.^) = column
 
 infixl 9 .^
+
+type AggFunctionType g n a b = (Ast g, Monad n, Member (NodeTypes g) AggregateFunction) => g (ReaderT Aggregated n) a -> g (ReaderT Aggregated n) b
+
+avg :: AggFunctionType g n a a
+avg = mkAst . return . AggFunction "avg"
+
+max :: AggFunctionType g n a a
+max = mkAst . return . AggFunction "max"
+
+min :: AggFunctionType g n a a
+min = mkAst . return . AggFunction "min"
+
+sum :: AggFunctionType g n a a
+sum = mkAst . return . AggFunction "sum"
+
+stddev :: AggFunctionType g n a a
+stddev = mkAst . return . AggFunction "stddev"
+
+variance :: AggFunctionType g n a a
+variance = mkAst . return . AggFunction "variance"
+
+count :: AggFunctionType g n a Int64
+count = mkAst . return . Count
 
 hoist' :: (forall x. m x -> n x) -> SelectClause m -> SelectClause n
 hoist' f (Fields a)    = Fields (hoist (hoist f) a)
