@@ -5,7 +5,7 @@ module ExSql.Printer.Common
     , needBracket
     , needBracketL
     , needBracketR
-    , printFromAlias
+    , printRelationAlias
     , printFieldAlias
     ) where
 
@@ -42,8 +42,8 @@ needBracketR (Just (Relativity lp _)) (Relativity p a)
     | otherwise = False
 needBracketR _ _ = False
 
-printFromAlias :: Int -> TLB.Builder
-printFromAlias tid =
+printRelationAlias :: Int -> TLB.Builder
+printRelationAlias tid =
     TLB.fromText prefix `mappend` TLB.decimal tid
     where
     prefix = "t_"

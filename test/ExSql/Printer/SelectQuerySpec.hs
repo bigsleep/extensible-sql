@@ -17,7 +17,9 @@ module ExSql.Printer.SelectQuerySpec
 import qualified Control.Monad.Trans.State.Strict as State (runStateT)
 import Data.DList (DList)
 import qualified Data.DList as DList
+import Data.Extensible ((:*), nil, (<:))
 import Data.Functor.Identity (Identity(..))
+import Data.Int (Int64)
 import Data.Proxy (Proxy(..))
 import Data.Text (Text)
 import qualified Data.Text as Text (unpack)
@@ -31,10 +33,16 @@ import qualified Database.Persist.TH as Persist (mkPersist, persistLowerCase,
                                                  share, sqlSettings)
 
 import ExSql.Printer.Common
+import ExSql.Printer.Default
 import ExSql.Printer.SelectQuery
 import ExSql.Printer.Types
+import ExSql.Syntax.Arithmetic
+import ExSql.Syntax.Class (Expr)
+import ExSql.Syntax.Comparison
 import ExSql.Syntax.Internal.SelectQueryStage
 import ExSql.Syntax.Internal.Types
+import ExSql.Syntax.Literal
+import ExSql.Syntax.Logical
 import ExSql.Syntax.Relativity
 import ExSql.Syntax.SelectQuery
 
@@ -48,42 +56,39 @@ Person
     deriving Eq
 |]
 
-data E a where
-    Lit :: (PersistField a) => a -> E a
-    Col :: (PersistEntity record) => Ref (Entity record) -> EntityField record a -> E a
-    F :: (PersistField a) => Ref a -> E a
+type Nodes = '[Arithmetic, Comparison, Field, Literal, Logical]
+type E = Expr Nodes
+type Printers xs a = Printer (Expr xs Identity) :* xs
 
-pe :: ExprPrinterType E
-pe _ _ (Lit a) =
-    let v = toPersistValue a
-    in StatementBuilder (TLB.singleton '?', return v)
-pe _ _ (Col (RelationRef (RRef tid)) col) =
-    let columnName = unDBName . fieldDBName $ col
-        x = printFromAlias tid `mappend` TLB.singleton '.' `mappend` TLB.fromText columnName
-    in StatementBuilder (x, mempty)
-pe _ _ (F (FieldRef (FRef fid))) = StatementBuilder (printFieldAlias fid, mempty)
-pe _ _ (F (FieldRef (QRef tid fid))) =
-    let x = printFromAlias tid `mappend` TLB.singleton '.' `mappend` printFieldAlias fid
-    in StatementBuilder (x, mempty)
+pe :: ExprPrinterType (E Identity)
+pe = printExpr (printers pe)
 
-sq1 :: SelectQuery Neutral E (Entity Person)
+printers :: ExprPrinterType (E Identity) -> Printers Nodes a
+printers p = Printer (printArithmetic p)
+    <: Printer (printComparison p)
+    <: Printer (printField p)
+    <: Printer (printLiteral p)
+    <: Printer (printLogical p)
+    <: nil
+
+sq1 :: SelectQuery Neutral (E Identity) (Entity Person)
 sq1 = selectFrom $ \_ _ -> id
 
-sq2 :: SelectQuery FieldsSpecified E (Int, Text, Int)
-sq2 = selectFrom $ \(_ :: Ref (Entity Person)) _ -> resultAs ((,,) :$: Sel (Lit 1) :*: Sel (Lit "a") :*: Sel (Lit 2)) $ const id
+sq2 :: SelectQuery FieldsSpecified (E Identity) (Int64, Text, Int64)
+sq2 = selectFrom $ \(_ :: RRef (Entity Person)) _ -> resultAs ((,,) :$: Sel (int 1) :*: Sel (text "a") :*: Sel (int 2)) $ const id
 
-sq3 :: SelectQuery FieldsSpecified E (Text, Int)
-sq3 = selectFrom $ \(ref :: Ref (Entity Person)) _ ->
-        resultAs ((,) :$: Sel (Col ref PersonName) :*: Sel (Col ref PersonAge)) $
-            \(_ :$: f1 :*: _) -> orderBy (F f1) Asc
+sq3 :: SelectQuery FieldsSpecified (E Identity) (Text, Int)
+sq3 = selectFrom $ \(ref :: RRef (Entity Person)) _ ->
+        resultAs ((,) :$: Sel (column ref PersonName) :*: Sel (column ref PersonAge)) $
+            \(_ :$: f1 :*: _) -> orderBy (field f1) Asc
 
-sq4 :: SelectQuery FieldsSpecified E (Int, Text)
+sq4 :: SelectQuery FieldsSpecified (E Identity) (Int, Text)
 sq4 = selectFromSub sq3 $ \(_ :$: f1 :*: f2) _ ->
-        resultAs ((,) :$: Sel (F f2) :*: Sel (F f1)) $ \(_ :$: f2' :*: f1') -> orderBy (F f1') Asc
+        resultAs ((,) :$: Sel (field f2) :*: Sel (field f1)) $ \(_ :$: f2' :*: f1') -> orderBy (field f1') Asc
 
-sq5 ::  SelectQuery FieldsSpecified E (Entity Person, Int)
-sq5 = selectFromSub sq1 $ \(_ :$: sq1ref) sq1alias ->
-        resultAs ((,) :$: Star sq1alias :*: Sel (Col sq1ref PersonAge)) $ const id
+sq5 ::  SelectQuery FieldsSpecified (E Identity) (Entity Person, Int)
+sq5 = selectFromSub sq1 $ \(_ :$: RelationRef sq1ref) sq1alias ->
+        resultAs ((,) :$: Star sq1alias :*: Sel (column sq1ref PersonAge)) $ const id
 
 spec :: Spec
 spec = describe "SelectQuery" $ do

@@ -74,6 +74,7 @@ printRow p _ _ (Row6 (a0, a1, a2, a3, a4, a5)) = printVals [p Nothing Nothing a0
 printLiteral :: ExprPrinterType (Expr xs Identity) -> PrinterType (Expr xs Identity) Literal a
 printLiteral _ _ _ (LitInt a) = StatementBuilder (TLB.singleton '?', return $ PersistInt64 a)
 printLiteral _ _ _ (LitBool a) = StatementBuilder (TLB.singleton '?', return $ PersistBool a)
+printLiteral _ _ _ (LitText a) = StatementBuilder (TLB.singleton '?', return $ PersistText a)
 printLiteral p _ _ (LitValueList a) = StatementBuilder (t, ps)
     where
     elems = map (p Nothing Nothing) (NonEmpty.toList a)

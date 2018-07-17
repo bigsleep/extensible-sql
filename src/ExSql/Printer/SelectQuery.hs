@@ -9,7 +9,7 @@ module ExSql.Printer.SelectQuery
     , SelectClauses(..)
     , printField
     , renderSelect
-    , printFromAlias
+    , printRelationAlias
     , printFieldAlias
     , printSelect
     , printSelectClauses
@@ -80,22 +80,30 @@ printSelect p query =
     in printSelectClauses sc
 
 printField :: ExprPrinterType g -> PrinterType g Field a
-printField _ _ _ (Field (FRef fid)) = StatementBuilder (printFieldAlias fid, mempty)
-printField _ l r (Field (QRef tid fid)) =
-    StatementBuilder (handleBracket l c r x, mempty)
+printField _ l r (Field (RelationRef (RRef tid))) = printQF l r (printRelationAlias tid) (printFieldAlias 0)
+printField _ l r (Field (RelationRef (RRefSub tid _))) = printQF l r (printRelationAlias tid) (printFieldAlias 0)
+printField _ _ _ (Field (FieldRef (FRef fid))) = StatementBuilder (printFieldAlias fid, mempty)
+printField _ l r (Field (FieldRef (QRef tid fid))) = printQF l r (printRelationAlias tid) (printFieldAlias fid)
+printField _ l r (Column rref col) = printQF l r (printRelationAlias tid) (TLB.fromText columnName)
     where
-    c = Relativity (Precedence 3) LeftToRight
-    x = printFromAlias tid `mappend` printFieldAlias fid
-printField _ l r (Column rref col) =
-    StatementBuilder (handleBracket l c r x, mempty)
-    where
-    c = Relativity (Precedence 3) LeftToRight
+    tid = getTid rref
     columnName = Persist.unDBName . Persist.fieldDBName $ col
-    x = printFromAlias (getTid rref)
-        `mappend` TLB.singleton '.'
-        `mappend` TLB.fromText columnName
-    getTid (RRef tid)      = tid
-    getTid (RRefSub tid _) = tid
+
+getTid :: RRef a -> Int
+getTid (RRef tid)      = tid
+getTid (RRefSub tid _) = tid
+
+printQF
+    :: Maybe Relativity
+    -> Maybe Relativity
+    -> TLB.Builder
+    -> TLB.Builder
+    -> StatementBuilder
+printQF l r a b =
+    StatementBuilder (handleBracket l c r x, mempty)
+    where
+    c = Relativity (Precedence 3) LeftToRight
+    x = a `mappend` TLB.singleton '.' `mappend` b
 
 printSelectClauses :: SelectClauses -> StatementBuilder
 printSelectClauses (SelectClauses field from where_ groupBy orderBy limit) =
@@ -206,13 +214,13 @@ mkPersistConvertInternal f = do
 renderFrom :: (Persist.PersistEntity record) => Int -> proxy (Persist.Entity record) -> Clause
 renderFrom eid ref =
     let tableName = Persist.unDBName . Persist.entityDB . Persist.entityDef . fmap Persist.entityVal . toProxy $ ref
-        alias = printFromAlias eid
+        alias = printRelationAlias eid
         a = TLB.fromText tableName <> TLB.fromText " AS " <> alias
     in Clause . return . StatementBuilder $ (a, mempty)
 
 renderFromSub :: ExprPrinterType g -> Int -> SelectQuery s g a -> Clause
 renderFromSub p tid query =
-    let alias = printFromAlias tid
+    let alias = printRelationAlias tid
         StatementBuilder (t, ps) = printSelect p query
         a = addBracket t <> TLB.fromText " AS " <> alias
     in Clause . return . StatementBuilder $ (a, ps)
@@ -232,7 +240,7 @@ renderFieldWildcard (RelationAliasSub eid _) = renderFieldWildcardInternal eid
 
 renderFieldWildcardInternal :: Int -> Clause
 renderFieldWildcardInternal eid =
-    let alias = printFromAlias eid
+    let alias = printRelationAlias eid
         a = alias <> TLB.fromText ".*"
     in Clause . return . StatementBuilder $ (a, mempty)
 

@@ -84,7 +84,7 @@ instance Hoist (SelectQuery s) where
 data OrderType = Asc | Desc deriving (Show, Eq)
 
 data Field (g :: * -> *) a where
-    Field :: (PersistField a) => FRef a -> Field g a
+    Field :: (PersistField a) => Ref a -> Field g a
     Column :: (PersistEntity record) => RRef (Entity record) -> EntityField record a -> Field g a
 
 instance Hoist Field where
@@ -112,16 +112,17 @@ type ARefs g xs = HList.HList (ARef g) xs
 
 selectFrom
     :: forall a g record stage. (PersistEntity record)
-    => (Ref (Entity record)-> RelationAlias (Entity record) -> SelectQuery Neutral g (Entity record) -> SelectQuery stage g a)
+    => (RRef (Entity record)-> RelationAlias (Entity record) -> SelectQuery Neutral g (Entity record) -> SelectQuery stage g a)
     -> SelectQuery stage g a
 selectFrom f = SelectQuery $ do
     (i, j) <- State.get
     State.put (i + 1, j)
-    let ref = RelationRef (RRef i) :: Ref (Entity record)
+    let rref = RRef i :: RRef (Entity record)
+        ref = RelationRef rref
         alias = RelationAlias i :: RelationAlias (Entity record)
         sref = id :$: ref
     lift . Writer.tell . SelectClauses . return $ From i alias
-    unSelectQuery . f ref alias . SelectQuery . return $ sref
+    unSelectQuery . f rref alias . SelectQuery . return $ sref
 
 selectFromSub
     :: SelectQuery s g b
@@ -199,7 +200,7 @@ offset a (SelectQuery q) = SelectQuery $ do
     return r
 
 field :: (Ast g, Monad m, Member (NodeTypes g) Field, PersistField a)
-    => FRef a -> g m a
+    => Ref a -> g m a
 field = mkAst . return . Field
 
 column :: (Ast g, Monad m, Member (NodeTypes g) Field, PersistEntity record)
