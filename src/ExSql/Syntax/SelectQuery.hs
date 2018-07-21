@@ -22,17 +22,21 @@ module ExSql.Syntax.SelectQuery
     , limit
     , offset
     , orderBy
+    , aggResultAs
     , resultAs
     , selectFrom
     , selectFromSub
     , where_
+    , afield
     , avg
     , max
     , min
     , stddev
     , variance
     , count
+    , AggregateFunction(..)
     , AFields
+    , ARef(..)
     , ARefs
     ) where
 
@@ -138,11 +142,29 @@ selectFromSub sub f = SelectQuery $ do
     unSelectQuery . f qref alias . SelectQuery . return $ qref
 
 resultAs
+    :: (Ast g, expr ~ g Identity)
+    => FieldsSelector (Sel expr) a1
+    -> (FieldsSelector Ref a1 -> SelectQuery FieldsSpecified expr a1 -> SelectQuery FieldsSpecified expr a2)
+    -> SelectQuery Neutral expr a0
+    -> SelectQuery FieldsSpecified expr a2
+resultAs = resultAsInternal
+
+aggResultAs
+    :: (Ast g, expr0 ~ g (ReaderT Aggregated Identity), expr1 ~ g Identity)
+    => FieldsSelector (Sel expr0) a1
+    -> (FieldsSelector Ref a1 -> SelectQuery AggFieldsSpecified expr1 a1 -> SelectQuery AggFieldsSpecified expr1 a2)
+    -> SelectQuery Aggregated expr1 a0
+    -> SelectQuery AggFieldsSpecified expr1 a2
+aggResultAs selector = resultAsInternal selector'
+    where
+    selector' = hoist (hoist (hoistAst (`runReaderT` Aggregated))) selector
+
+resultAsInternal
     :: FieldsSelector (Sel g) a1
-    -> (FieldsSelector Ref a1 -> SelectQuery FieldsSpecified g a1 -> SelectQuery FieldsSpecified g a2)
-    -> SelectQuery Neutral g a0
-    -> SelectQuery FieldsSpecified g a2
-resultAs selector cont (SelectQuery pre) = SelectQuery $ do
+    -> (FieldsSelector Ref a1 -> SelectQuery stage1 g a1 -> SelectQuery stage1 g a2)
+    -> SelectQuery stage0 g a0
+    -> SelectQuery stage1 g a2
+resultAsInternal selector cont (SelectQuery pre) = SelectQuery $ do
     _ <- pre
     selectorWithAlias <- mkRef selector
     lift . Writer.tell . SelectClauses . return $ Fields selectorWithAlias
@@ -168,17 +190,15 @@ where_ a (SelectQuery q) = SelectQuery $ do
     return r
 
 groupBy
-    :: (Ast g, m ~ ReaderT Aggregated n, Functor n, Member (NodeTypes g) AggregateFunction)
+    :: (Ast g, Functor m, Member (NodeTypes g) AggregateFunction)
     => AFields (g m) xs
-    -> (ARefs (g n) xs -> SelectQuery Aggregated (g n) [PersistValue] -> SelectQuery s (g n) a1)
-    -> SelectQuery Neutral (g n) a0
-    -> SelectQuery s (g n) a1
-groupBy fields cont (SelectQuery pre) = SelectQuery $ do
-    _ <- pre
-    let removeConstraint = hoist (hoistAst (`runReaderT` Aggregated))
-        fields' = runIdentity . HList.htraverse (return . removeConstraint) $ fields
-        ref = afieldsToARefs fields'
-    lift . Writer.tell . SelectClauses . return $ GroupBy fields'
+    -> (ARefs (g m) xs -> SelectQuery Aggregated (g m) [PersistValue] -> SelectQuery s (g m) a1)
+    -> SelectQuery Neutral (g m) a0
+    -> SelectQuery s (g m) a1
+groupBy fields cont pre = SelectQuery $ do
+    _ <- unSelectQuery pre
+    let ref = afieldsToARefs fields
+    lift . Writer.tell . SelectClauses . return $ GroupBy fields
     unSelectQuery . cont ref . SelectQuery . return $ Raw
 
 orderBy :: g b -> OrderType -> SelectQuery s g a -> SelectQuery s g a
@@ -199,21 +219,24 @@ offset a (SelectQuery q) = SelectQuery $ do
     lift . Writer.tell . SelectClauses . return . Offset $ a
     return r
 
-field :: (Ast g, Monad m, Member (NodeTypes g) Field, PersistField a)
+field :: (Ast g, m ~ Identity, Member (NodeTypes g) Field, PersistField a)
     => Ref a -> g m a
 field = mkAst . return . Field
 
-column :: (Ast g, Monad m, Member (NodeTypes g) Field, PersistEntity record)
+column :: (Ast g, m ~ Identity, Member (NodeTypes g) Field, PersistEntity record)
     => RRef (Entity record) -> EntityField record a -> g m a
 column t = mkAst . return . Column t
 
-(.^) :: (Ast g, Monad m, Member (NodeTypes g) Field, PersistEntity record)
+(.^) :: (Ast g, m ~ Identity, Member (NodeTypes g) Field, PersistEntity record)
     => RRef (Entity record) -> EntityField record a -> g m a
 (.^) = column
 
 infixl 9 .^
 
 type AggFunctionType g n a b = (Ast g, Monad n, Member (NodeTypes g) AggregateFunction) => g (ReaderT Aggregated n) a -> g (ReaderT Aggregated n) b
+
+afield :: (Ast g, Monad n, Member (NodeTypes g) AggregateFunction) => ARef (g n) a -> g (ReaderT Aggregated n) a
+afield = mkAst . return . AggField . hoist (hoistAst lift)
 
 avg :: AggFunctionType g n a a
 avg = mkAst . return . AggFunction "avg"

@@ -7,10 +7,15 @@ module ExSql.Printer.Common
     , needBracketR
     , printRelationAlias
     , printFieldAlias
+    , printVals
+    , printFun
     ) where
 
+import qualified Data.List as List (intersperse)
+import Data.Text (Text)
 import qualified Data.Text.Lazy.Builder as TLB
 import qualified Data.Text.Lazy.Builder.Int as TLB
+import ExSql.Printer.Types
 import ExSql.Syntax.Relativity
 
 addBracket :: TLB.Builder -> TLB.Builder
@@ -53,3 +58,18 @@ printFieldAlias fid =
     TLB.fromText prefix `mappend` TLB.decimal fid
     where
     prefix = "f_"
+
+printVals :: [StatementBuilder] -> StatementBuilder
+printVals vals = StatementBuilder (t, ps)
+    where
+    xs = map (fst . unStatementBuilder) vals
+    t = TLB.singleton '('
+        `mappend` mconcat (List.intersperse (TLB.fromText ", ") xs)
+        `mappend` TLB.singleton ')'
+    ps = mconcat $ map (snd . unStatementBuilder) vals
+
+printFun :: Text -> [StatementBuilder] -> StatementBuilder
+printFun fname args = StatementBuilder (t, ps)
+    where
+    StatementBuilder (x, ps) = printVals args
+    t = TLB.fromText fname `mappend` x

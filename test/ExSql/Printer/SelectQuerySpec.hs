@@ -14,10 +14,12 @@ module ExSql.Printer.SelectQuerySpec
     ( spec
     ) where
 
+import Control.Monad.Trans.Reader (Reader)
 import qualified Control.Monad.Trans.State.Strict as State (runStateT)
 import Data.DList (DList)
 import qualified Data.DList as DList
 import Data.Extensible ((:*), nil, (<:))
+import Data.Extensible.HList (HList(..))
 import Data.Functor.Identity (Identity(..))
 import Data.Int (Int64)
 import Data.Proxy (Proxy(..))
@@ -56,7 +58,7 @@ Person
     deriving Eq
 |]
 
-type Nodes = '[Arithmetic, Comparison, Field, Literal, Logical]
+type Nodes = '[AggregateFunction, Arithmetic, Comparison, Field, Literal, Logical]
 type E = Expr Nodes
 type Printers xs a = Printer (Expr xs Identity) :* xs
 
@@ -64,7 +66,8 @@ pe :: ExprPrinterType (E Identity)
 pe = printExpr (printers pe)
 
 printers :: ExprPrinterType (E Identity) -> Printers Nodes a
-printers p = Printer (printArithmetic p)
+printers p = Printer (printAggregateFunction p)
+    <: Printer (printArithmetic p)
     <: Printer (printComparison p)
     <: Printer (printField p)
     <: Printer (printLiteral p)
@@ -86,9 +89,14 @@ sq4 :: SelectQuery FieldsSpecified (E Identity) (Int, Text)
 sq4 = selectFromSub sq3 $ \(_ :$: f1 :*: f2) _ ->
         resultAs ((,) :$: Sel (field f2) :*: Sel (field f1)) $ \(_ :$: f2' :*: f1') -> orderBy (field f1') Asc
 
-sq5 ::  SelectQuery FieldsSpecified (E Identity) (Entity Person, Int)
+sq5 :: SelectQuery FieldsSpecified (E Identity) (Entity Person, Int)
 sq5 = selectFromSub sq1 $ \(_ :$: RelationRef sq1ref) sq1alias ->
         resultAs ((,) :$: Star sq1alias :*: Sel (column sq1ref PersonAge)) $ const id
+
+sq6 :: SelectQuery AggFieldsSpecified (E Identity) (Int, Int64)
+sq6 = selectFrom $ \(person :: RRef (Entity Person)) _ ->
+        groupBy (Column person PersonAge :< Nil) $ \(a :< _) ->
+        aggResultAs ((,) :$: Sel (afield a) :*: Sel (count (int 1))) $ const id
 
 spec :: Spec
 spec = describe "SelectQuery" $ do
@@ -150,3 +158,16 @@ spec = describe "SelectQuery" $ do
             Right entity = Persist.parseEntityValues def [PersistInt64 123, PersistText "abc", PersistInt64 2]
         State.runStateT convert [PersistInt64 123, PersistText "abc", PersistInt64 2, PersistInt64 2]
             `shouldBe` Right ((entity, 2), [])
+
+    it "select groupBy" $ do
+        let (convert, r) = renderSelect pe sq6
+            expected = mempty
+                { scField = Clause . DList.fromList $
+                    [ StatementBuilder ("t_0.age AS f_0", mempty)
+                    , StatementBuilder ("COUNT(?) AS f_1", return $ PersistInt64 1)
+                    ]
+                , scFrom = Clause . return $ StatementBuilder ("person AS t_0", mempty)
+                , scGroupBy = Clause . return $ StatementBuilder ("t_0.age", mempty)
+                }
+        r `shouldBe` expected
+        State.runStateT convert [PersistInt64 30, PersistInt64 3] `shouldBe` Right ((30, 3), [])

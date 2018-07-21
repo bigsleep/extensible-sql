@@ -48,21 +48,6 @@ printBinOp p l c r op a b =
         StatementBuilder (rt, rps) = p (Just c) r b
     in StatementBuilder (handleBracket l c r $ lt `mappend` TLB.fromText op `mappend` rt, lps `mappend` rps)
 
-printVals :: [StatementBuilder] -> StatementBuilder
-printVals vals = StatementBuilder (t, ps)
-    where
-    xs = map (fst . unStatementBuilder) vals
-    t = TLB.singleton '('
-        `mappend` mconcat (List.intersperse (TLB.fromText ", ") xs)
-        `mappend` TLB.singleton ')'
-    ps = mconcat $ map (snd . unStatementBuilder) vals
-
-printFun :: Text -> [StatementBuilder] -> StatementBuilder
-printFun fname args = StatementBuilder (t, ps)
-    where
-    StatementBuilder (x, ps) = printVals args
-    t = TLB.fromText fname `mappend` x
-
 printRow :: ExprPrinterType (Expr xs Identity) -> Maybe Relativity -> Maybe Relativity -> Row (Expr xs Identity) a -> StatementBuilder
 printRow p l r (Row a) = p l r a
 printRow p _ _ (Row2 (a0, a1)) = printVals [p Nothing Nothing a0, p Nothing Nothing a1]

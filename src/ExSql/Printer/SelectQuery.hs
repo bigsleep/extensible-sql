@@ -8,6 +8,7 @@ module ExSql.Printer.SelectQuery
     , OrderByClause(..)
     , SelectClauses(..)
     , printField
+    , printAggregateFunction
     , renderSelect
     , printRelationAlias
     , printFieldAlias
@@ -44,7 +45,8 @@ import ExSql.Printer.Types
 import ExSql.Syntax.Internal.Types
 import ExSql.Syntax.Relativity (Associativity(..), Precedence(..),
                                 Relativity(..))
-import ExSql.Syntax.SelectQuery (Field(..), FieldsSelector(..), OrderType(..),
+import ExSql.Syntax.SelectQuery (ARef(..), AggregateFunction(..), Field(..),
+                                 FieldsSelector(..), OrderType(..),
                                  SelectQuery(..))
 import qualified ExSql.Syntax.SelectQuery as Syntax
 
@@ -104,6 +106,11 @@ printQF l r a b =
     where
     c = Relativity (Precedence 3) LeftToRight
     x = a `mappend` TLB.singleton '.' `mappend` b
+
+printAggregateFunction :: ExprPrinterType g -> PrinterType g AggregateFunction a
+printAggregateFunction p _ _ (AggFunction f a) = printFun f [p Nothing Nothing a]
+printAggregateFunction p l r (AggField (ARef field)) = printField p l r field
+printAggregateFunction p _ _ (Count a) = printFun "COUNT" [p Nothing Nothing a]
 
 printSelectClauses :: SelectClauses -> StatementBuilder
 printSelectClauses (SelectClauses field from where_ groupBy orderBy limit) =
