@@ -55,8 +55,8 @@ printers p
 pp :: Maybe Relativity -> Maybe Relativity -> Expr Nodes Identity a -> StatementBuilder
 pp = printExpr (printers pp)
 
-s1 :: SelectQuery Neutral E (Entity Person)
-s1 = selectFrom $ \_ _ -> where_ e1
+s1 :: SelectQuery E (Entity Person)
+s1 = select_ . from $ \_ _ -> where_ e1
 
 main :: IO ()
 main = do

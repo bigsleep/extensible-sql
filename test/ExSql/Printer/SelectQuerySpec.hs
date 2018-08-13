@@ -74,27 +74,27 @@ printers p = Printer (printAggregateFunction p)
     <: Printer (printLogical p)
     <: nil
 
-sq1 :: SelectQuery Neutral (E Identity) (Entity Person)
-sq1 = selectFrom $ \_ _ -> id
+sq1 :: SelectQuery (E Identity) (Entity Person)
+sq1 = select_ . from $ \_ _ -> id
 
-sq2 :: SelectQuery FieldsSpecified (E Identity) (Int64, Text, Int64)
-sq2 = selectFrom $ \(_ :: RRef (Entity Person)) _ -> resultAs ((,,) :$: Sel (int 1) :*: Sel (text "a") :*: Sel (int 2)) $ const id
+sq2 :: SelectQuery (E Identity) (Int64, Text, Int64)
+sq2 = select . from $ \(_ :: RRef (Entity Person)) _ -> resultAs ((,,) :$: Sel (int 1) :*: Sel (text "a") :*: Sel (int 2)) $ const id
 
-sq3 :: SelectQuery FieldsSpecified (E Identity) (Text, Int)
-sq3 = selectFrom $ \(ref :: RRef (Entity Person)) _ ->
+sq3 :: SelectQuery (E Identity) (Text, Int)
+sq3 = select . from $ \ref _ ->
         resultAs ((,) :$: Sel (column ref PersonName) :*: Sel (column ref PersonAge)) $
             \(_ :$: f1 :*: _) -> orderBy (field f1) Asc
 
-sq4 :: SelectQuery FieldsSpecified (E Identity) (Int, Text)
-sq4 = selectFromSub sq3 $ \(_ :$: f1 :*: f2) _ ->
-        resultAs ((,) :$: Sel (field f2) :*: Sel (field f1)) $ \(_ :$: f2' :*: f1') -> orderBy (field f1') Asc
+sq4 :: SelectQuery (E Identity) (Int, Text)
+sq4 = select . fromSub sq3 $ \(_ :$: f1 :*: f2) _ ->
+         resultAs ((,) :$: Sel (field f2) :*: Sel (field f1)) $ \(_ :$: f2' :*: f1') -> orderBy (field f1') Asc
 
-sq5 :: SelectQuery FieldsSpecified (E Identity) (Entity Person, Int)
-sq5 = selectFromSub sq1 $ \(_ :$: RelationRef sq1ref) sq1alias ->
+sq5 :: SelectQuery (E Identity) (Entity Person, Int)
+sq5 = select . fromSub sq1 $ \(_ :$: RelationRef sq1ref) sq1alias ->
         resultAs ((,) :$: Star sq1alias :*: Sel (column sq1ref PersonAge)) $ const id
 
-sq6 :: SelectQuery AggFieldsSpecified (E Identity) (Int, Int64)
-sq6 = selectFrom $ \(person :: RRef (Entity Person)) _ ->
+sq6 :: SelectQuery (E Identity) (Int, Int64)
+sq6 = selectAgg . from $ \(person :: RRef (Entity Person)) _ ->
         groupBy (Column person PersonAge :< Nil) $ \(a :< _) ->
         aggResultAs ((,) :$: Sel (afield a) :*: Sel (count (int 1))) $ const id
 

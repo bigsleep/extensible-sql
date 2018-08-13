@@ -11,6 +11,7 @@
 module ExSql.Syntax.SelectQuery
     ( Field(..)
     , SelectQuery(..)
+    , SelectQueryInternal(..)
     , FieldsSelector(..)
     , SelectClause(..)
     , SelectClauses(..)
@@ -24,8 +25,13 @@ module ExSql.Syntax.SelectQuery
     , orderBy
     , aggResultAs
     , resultAs
-    , selectFrom
-    , selectFromSub
+    , select_
+    , select
+    , selectAgg_
+    , selectAgg
+    , selectInternal
+    , from
+    , fromSub
     , where_
     , afield
     , avg
@@ -62,14 +68,17 @@ import ExSql.Syntax.Internal.SelectQueryStage
 import ExSql.Syntax.Internal.Types
 import Prelude hiding (max, min)
 
-newtype SelectQuery stage (g :: * -> *) a = SelectQuery
-    { unSelectQuery :: StateT (Int, Int) (Writer (SelectClauses g)) (FieldsSelector Ref a)
+data SelectQuery g a where
+    SelectQuery :: SelectQueryInternal s g a -> SelectQuery g a
+
+newtype SelectQueryInternal stage (g :: * -> *) a = SelectQueryInternal
+    { unSelectQueryInternal :: StateT (Int, Int) (Writer (SelectClauses g)) (FieldsSelector Ref a)
     }
 
 data SelectClause (g :: * -> *) where
     Fields :: FieldsSelector (SelWithAlias g) a -> SelectClause g
     From :: (PersistEntity record) => Int -> proxy (Entity record) -> SelectClause g
-    FromSub :: Int -> SelectQuery s g a -> SelectClause g
+    FromSub :: Int -> SelectQuery g a -> SelectClause g
     Where :: g Bool -> SelectClause g
     GroupBy :: AFields g xs -> SelectClause g
     OrderBy :: g b -> OrderType -> SelectClause g
@@ -80,8 +89,11 @@ data SelectClause (g :: * -> *) where
 newtype SelectClauses g = SelectClauses (DList (SelectClause g))
     deriving (Semigroup, Monoid)
 
-instance Hoist (SelectQuery s) where
-    hoist f (SelectQuery a) = SelectQuery $ State.mapStateT h a
+instance Hoist SelectQuery where
+    hoist f (SelectQuery a) = SelectQuery (hoist f a)
+
+instance Hoist (SelectQueryInternal s) where
+    hoist f (SelectQueryInternal a) = SelectQueryInternal $ State.mapStateT h a
         where
         h = Writer.mapWriter $ \(x, SelectClauses w) -> (x, SelectClauses (fmap (hoist' f) w))
 
@@ -114,11 +126,28 @@ type AFields g xs = HList.HList (Field g) xs
 
 type ARefs g xs = HList.HList (ARef g) xs
 
-selectFrom
-    :: forall a g record stage. (PersistEntity record)
-    => (RRef (Entity record)-> RelationAlias (Entity record) -> SelectQuery Neutral g (Entity record) -> SelectQuery stage g a)
-    -> SelectQuery stage g a
-selectFrom f = SelectQuery $ do
+select_ :: (SelectQueryInternal Neutral g [PersistValue] -> SelectQueryInternal Neutral g a) -> SelectQuery g a
+select_ = SelectQuery . selectInternal
+
+select :: (SelectQueryInternal Neutral g [PersistValue] -> SelectQueryInternal FieldsSpecified g a) -> SelectQuery g a
+select = SelectQuery . selectInternal
+
+selectAgg_ :: (SelectQueryInternal Neutral g [PersistValue] -> SelectQueryInternal Aggregated g a) -> SelectQuery g a
+selectAgg_ = SelectQuery . selectInternal
+
+selectAgg :: (SelectQueryInternal Neutral g [PersistValue] -> SelectQueryInternal AggFieldsSpecified g a) -> SelectQuery g a
+selectAgg = SelectQuery . selectInternal
+
+selectInternal :: (SelectQueryInternal s0 g [PersistValue] -> SelectQueryInternal s1 g a) -> SelectQueryInternal s1 g a
+selectInternal f = f . SelectQueryInternal . return $ Raw
+
+from
+    :: forall a g x record s0 s1. (PersistEntity record)
+    => (RRef (Entity record)-> RelationAlias (Entity record) -> SelectQueryInternal Neutral g (Entity record) -> SelectQueryInternal s1 g a)
+    -> SelectQueryInternal Neutral g x
+    -> SelectQueryInternal s1 g a
+from f (SelectQueryInternal pre) = SelectQueryInternal $ do
+    _ <- pre
     (i, j) <- State.get
     State.put (i + 1, j)
     let rref = RRef i :: RRef (Entity record)
@@ -126,50 +155,52 @@ selectFrom f = SelectQuery $ do
         alias = RelationAlias i :: RelationAlias (Entity record)
         sref = id :$: ref
     lift . Writer.tell . SelectClauses . return $ From i alias
-    unSelectQuery . f rref alias . SelectQuery . return $ sref
+    unSelectQueryInternal . f rref alias . SelectQueryInternal . return $ sref
 
-selectFromSub
-    :: SelectQuery s g b
-    -> (FieldsSelector Ref b -> RelationAlias b -> SelectQuery Neutral g b -> SelectQuery stage g a)
-    -> SelectQuery stage g a
-selectFromSub sub f = SelectQuery $ do
+fromSub
+    :: SelectQuery g b
+    -> (FieldsSelector Ref b -> RelationAlias b -> SelectQueryInternal Neutral g b -> SelectQueryInternal s1 g a)
+    -> SelectQueryInternal Neutral g x
+    -> SelectQueryInternal s1 g a
+fromSub sub @ (SelectQuery subq) f (SelectQueryInternal pre) = SelectQueryInternal $ do
+    _ <- pre
     (i, j) <- State.get
     State.put (i + 1, j)
-    let (sref, _) = Writer.runWriter . flip State.evalStateT (0, 0) . unSelectQuery $ sub
+    let (sref, _) = Writer.runWriter . flip State.evalStateT (0, 0) . unSelectQueryInternal $ subq
         qref = qualifySelectorRef i sref
         alias = RelationAliasSub i qref
     lift . Writer.tell . SelectClauses . return . FromSub i $ sub
-    unSelectQuery . f qref alias . SelectQuery . return $ qref
+    unSelectQueryInternal . f qref alias . SelectQueryInternal . return $ qref
 
 resultAs
     :: (Ast g, expr ~ g Identity)
     => FieldsSelector (Sel expr) a1
-    -> (FieldsSelector Ref a1 -> SelectQuery FieldsSpecified expr a1 -> SelectQuery FieldsSpecified expr a2)
-    -> SelectQuery Neutral expr a0
-    -> SelectQuery FieldsSpecified expr a2
+    -> (FieldsSelector Ref a1 -> SelectQueryInternal FieldsSpecified expr a1 -> SelectQueryInternal FieldsSpecified expr a2)
+    -> SelectQueryInternal Neutral expr a0
+    -> SelectQueryInternal FieldsSpecified expr a2
 resultAs = resultAsInternal
 
 aggResultAs
     :: (Ast g, expr0 ~ g (ReaderT Aggregated Identity), expr1 ~ g Identity)
     => FieldsSelector (Sel expr0) a1
-    -> (FieldsSelector Ref a1 -> SelectQuery AggFieldsSpecified expr1 a1 -> SelectQuery AggFieldsSpecified expr1 a2)
-    -> SelectQuery Aggregated expr1 a0
-    -> SelectQuery AggFieldsSpecified expr1 a2
+    -> (FieldsSelector Ref a1 -> SelectQueryInternal AggFieldsSpecified expr1 a1 -> SelectQueryInternal AggFieldsSpecified expr1 a2)
+    -> SelectQueryInternal Aggregated expr1 a0
+    -> SelectQueryInternal AggFieldsSpecified expr1 a2
 aggResultAs selector = resultAsInternal selector'
     where
     selector' = hoist (hoist (hoistAst (`runReaderT` Aggregated))) selector
 
 resultAsInternal
     :: FieldsSelector (Sel g) a1
-    -> (FieldsSelector Ref a1 -> SelectQuery stage1 g a1 -> SelectQuery stage1 g a2)
-    -> SelectQuery stage0 g a0
-    -> SelectQuery stage1 g a2
-resultAsInternal selector cont (SelectQuery pre) = SelectQuery $ do
+    -> (FieldsSelector Ref a1 -> SelectQueryInternal stage1 g a1 -> SelectQueryInternal stage1 g a2)
+    -> SelectQueryInternal stage0 g a0
+    -> SelectQueryInternal stage1 g a2
+resultAsInternal selector cont (SelectQueryInternal pre) = SelectQueryInternal $ do
     _ <- pre
     selectorWithAlias <- mkRef selector
     lift . Writer.tell . SelectClauses . return $ Fields selectorWithAlias
     let ref = hoist aliasToRef selectorWithAlias
-    unSelectQuery . cont ref . SelectQuery . return $ ref
+    unSelectQueryInternal . cont ref . SelectQueryInternal . return $ ref
 
     where
     mkRef s = do
@@ -183,8 +214,8 @@ resultAsInternal selector cont (SelectQuery pre) = SelectQuery $ do
     aliasToRef (Star' (RelationAliasSub i ref)) = RelationRef (RRefSub i ref)
     aliasToRef (Sel' _ (FieldAlias i))          = FieldRef (FRef i)
 
-where_ :: g Bool -> SelectQuery s g a -> SelectQuery s g a
-where_ a (SelectQuery q) = SelectQuery $ do
+where_ :: g Bool -> SelectQueryInternal s g a -> SelectQueryInternal s g a
+where_ a (SelectQueryInternal q) = SelectQueryInternal $ do
     r <- q
     lift . Writer.tell . SelectClauses . return $ Where a
     return r
@@ -192,29 +223,29 @@ where_ a (SelectQuery q) = SelectQuery $ do
 groupBy
     :: (Ast g, Functor m, Member (NodeTypes g) AggregateFunction)
     => AFields (g m) xs
-    -> (ARefs (g m) xs -> SelectQuery Aggregated (g m) [PersistValue] -> SelectQuery s (g m) a1)
-    -> SelectQuery Neutral (g m) a0
-    -> SelectQuery s (g m) a1
-groupBy fields cont pre = SelectQuery $ do
-    _ <- unSelectQuery pre
+    -> (ARefs (g m) xs -> SelectQueryInternal Aggregated (g m) [PersistValue] -> SelectQueryInternal s (g m) a1)
+    -> SelectQueryInternal Neutral (g m) a0
+    -> SelectQueryInternal s (g m) a1
+groupBy fields cont pre = SelectQueryInternal $ do
+    _ <- unSelectQueryInternal pre
     let ref = afieldsToARefs fields
     lift . Writer.tell . SelectClauses . return $ GroupBy fields
-    unSelectQuery . cont ref . SelectQuery . return $ Raw
+    unSelectQueryInternal . cont ref . SelectQueryInternal . return $ Raw
 
-orderBy :: g b -> OrderType -> SelectQuery s g a -> SelectQuery s g a
-orderBy a t (SelectQuery q) = SelectQuery $ do
+orderBy :: g b -> OrderType -> SelectQueryInternal s g a -> SelectQueryInternal s g a
+orderBy a t (SelectQueryInternal q) = SelectQueryInternal $ do
     r <- q
     lift . Writer.tell . SelectClauses . return $ OrderBy a t
     return r
 
-limit :: Int64 -> SelectQuery s g a -> SelectQuery s g a
-limit a (SelectQuery q) = SelectQuery $ do
+limit :: Int64 -> SelectQueryInternal s g a -> SelectQueryInternal s g a
+limit a (SelectQueryInternal q) = SelectQueryInternal $ do
     r <- q
     lift . Writer.tell . SelectClauses . return . Limit $ a
     return r
 
-offset :: Int64 -> SelectQuery s g a -> SelectQuery s g a
-offset a (SelectQuery q) = SelectQuery $ do
+offset :: Int64 -> SelectQueryInternal s g a -> SelectQueryInternal s g a
+offset a (SelectQueryInternal q) = SelectQueryInternal $ do
     r <- q
     lift . Writer.tell . SelectClauses . return . Offset $ a
     return r
