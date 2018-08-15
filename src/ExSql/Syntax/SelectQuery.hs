@@ -82,6 +82,7 @@ data From g a where
 data SelectClause (g :: * -> *) where
     Fields :: FieldsSelector (SelWithAlias g) a -> SelectClause g
     From :: From g a -> SelectClause g
+    Join :: From g a -> Maybe (g Bool) -> SelectClause g
     Where :: g Bool -> SelectClause g
     GroupBy :: AFields g xs -> SelectClause g
     OrderBy :: g b -> OrderType -> SelectClause g
@@ -299,7 +300,8 @@ count = mkAst . return . Count
 
 hoist' :: (forall x. m x -> n x) -> SelectClause m -> SelectClause n
 hoist' f (Fields a)    = Fields (hoist (hoist f) a)
-hoist' f (From a)    = From (hoist f a)
+hoist' f (From a)      = From (hoist f a)
+hoist' f (Join a cond) = Join (hoist f a) (f <$> cond)
 hoist' f (Where a)     = Where (f a)
 hoist' f (GroupBy fs)  = GroupBy . runIdentity . HList.htraverse (Identity . hoist f) $ fs
 hoist' f (OrderBy a t) = OrderBy (f a) t

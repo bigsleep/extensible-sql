@@ -53,6 +53,9 @@ import qualified ExSql.Syntax.SelectQuery as Syntax
 newtype Clause = Clause (DList StatementBuilder)
     deriving (Show, Semigroup, Monoid, Eq)
 
+newtype JoinClause = JoinClause (DList (StatementBuilder, Maybe StatementBuilder))
+    deriving (Show, Semigroup, Monoid, Eq)
+
 newtype OrderByClause = OrderByClause (DList (StatementBuilder, OrderType))
     deriving (Show, Semigroup, Monoid, Eq)
 
@@ -62,6 +65,7 @@ data LimitClause = LimitClause (Maybe Int64) (Maybe Int64)
 data SelectClauses = SelectClauses
     { scField   :: !Clause
     , scFrom    :: !Clause
+    , scJoin    :: !JoinClause
     , scWhere   :: !Clause
     , scGroupBy :: !Clause
     , scOrderBy :: !OrderByClause
@@ -69,11 +73,11 @@ data SelectClauses = SelectClauses
     } deriving (Show, Eq)
 
 instance Semigroup SelectClauses where
-    (<>) (SelectClauses field0 from0 where0 groupBy0 orderBy0 (LimitClause offset0 limit0)) (SelectClauses field1 from1 where1 groupBy1 orderBy1 (LimitClause offset1 limit1)) =
-        SelectClauses (field0 <> field1) (from0 <> from1) (where0 <> where1) (groupBy0 <> groupBy1) (orderBy0 <> orderBy1) (LimitClause (offset0 `mplus` offset1) (limit0 `mplus` limit1))
+    (<>) (SelectClauses field0 from0 join0 where0 groupBy0 orderBy0 (LimitClause offset0 limit0)) (SelectClauses field1 from1 join1 where1 groupBy1 orderBy1 (LimitClause offset1 limit1)) =
+        SelectClauses (field0 <> field1) (from0 <> from1) (join0 <> join1) (where0 <> where1) (groupBy0 <> groupBy1) (orderBy0 <> orderBy1) (LimitClause (offset0 `mplus` offset1) (limit0 `mplus` limit1))
 
 instance Monoid SelectClauses where
-    mempty = SelectClauses mempty mempty mempty mempty mempty (LimitClause Nothing Nothing)
+    mempty = SelectClauses mempty mempty mempty mempty mempty mempty (LimitClause Nothing Nothing)
     mappend = (<>)
 
 printSelect :: ExprPrinterType g -> SelectQuery g a -> StatementBuilder
@@ -113,10 +117,11 @@ printAggregateFunction p l r (AggField (ARef field)) = printField p l r field
 printAggregateFunction p _ _ (Count a) = printFun "COUNT" [p Nothing Nothing a]
 
 printSelectClauses :: SelectClauses -> StatementBuilder
-printSelectClauses (SelectClauses field from where_ groupBy orderBy limit) =
+printSelectClauses (SelectClauses field from join where_ groupBy orderBy limit) =
     StatementBuilder ("SELECT ", mempty)
     <> printFieldClause field
     <> printFromClause from
+    <> printJoinClause join
     <> printWhereClause where_
     <> printGroupByClause groupBy
     <> printOrderByClause orderBy
@@ -134,6 +139,18 @@ printFromClause (Clause xs) = StatementBuilder (t, mconcat ps)
     where
     (ts, ps) = unzip . map unStatementBuilder . DList.toList $ xs
     t = TLB.fromText " FROM " <> mconcat (intersperse (TLB.fromText ", ") ts)
+
+printJoinClause :: JoinClause -> StatementBuilder
+printJoinClause (JoinClause DList.Nil) = StatementBuilder mempty
+printJoinClause (JoinClause xs) = StatementBuilder (t, p)
+    where
+    f (StatementBuilder (a0, p0), Just (StatementBuilder (a1, p1))) =
+        (TLB.fromText " JOIN " <> a0 <> " ON " <> a1, p0 <> p1)
+    f (StatementBuilder (a0, p0), Nothing) =
+        (TLB.fromText " JOIN " <> a0, p0)
+    (ts, ps) = unzip . map f . DList.toList $ xs
+    t = mconcat ts
+    p = mconcat ps
 
 printWhereClause :: Clause -> StatementBuilder
 printWhereClause (Clause DList.Nil) = mempty
@@ -178,6 +195,7 @@ renderSelect p (SelectQuery query) = (convert, clauses)
 renderSelectClause :: ExprPrinterType g -> Syntax.SelectClause g -> SelectClauses
 renderSelectClause p (Syntax.Fields fs) = mempty { scField = renderSelectorFields p fs }
 renderSelectClause p (Syntax.From a) = mempty { scFrom = renderFrom p a }
+renderSelectClause p (Syntax.Join a cond) = mempty { scJoin = renderJoin p a cond }
 renderSelectClause p (Syntax.Where w) = mempty { scWhere = Clause . return . p Nothing Nothing $ w }
 renderSelectClause p (Syntax.GroupBy fs) = mempty { scGroupBy = renderAFields p fs }
 renderSelectClause p (Syntax.OrderBy a t) = mempty { scOrderBy = OrderByClause . return $ (p Nothing Nothing a, t) }
@@ -218,17 +236,23 @@ mkPersistConvertInternal f = do
     return (f r)
 
 renderFrom :: ExprPrinterType g -> From g a -> Clause
-renderFrom _ (FromEntity eid ref) =
+renderFrom p = Clause . return . renderFrom' p
+
+renderFrom' :: ExprPrinterType g -> From g a -> StatementBuilder
+renderFrom' _ (FromEntity eid ref) =
     let tableName = Persist.unDBName . Persist.entityDB . Persist.entityDef . fmap Persist.entityVal . toProxy $ ref
         alias = printRelationAlias eid
         a = TLB.fromText tableName <> TLB.fromText " AS " <> alias
-    in Clause . return . StatementBuilder $ (a, mempty)
+    in StatementBuilder (a, mempty)
 
-renderFrom p (FromSubQuery tid query) =
+renderFrom' p (FromSubQuery tid query) =
     let alias = printRelationAlias tid
         StatementBuilder (t, ps) = printSelect p query
         a = addBracket t <> TLB.fromText " AS " <> alias
-    in Clause . return . StatementBuilder $ (a, ps)
+    in StatementBuilder (a, ps)
+
+renderJoin :: ExprPrinterType g -> From g a -> Maybe (g Bool) -> JoinClause
+renderJoin p a cond = JoinClause . return $  (renderFrom' p a, p Nothing Nothing <$> cond)
 
 renderSelectorFields :: ExprPrinterType g -> FieldsSelector (SelWithAlias g) a -> Clause
 renderSelectorFields _ Raw = mempty
