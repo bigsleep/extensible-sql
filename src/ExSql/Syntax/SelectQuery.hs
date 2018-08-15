@@ -71,8 +71,10 @@ import Prelude hiding (max, min)
 data SelectQuery g a where
     SelectQuery :: SelectQueryInternal s g a -> SelectQuery g a
 
+type SelectQueryM g = StateT (Int, Int) (Writer (SelectClauses g))
+
 newtype SelectQueryInternal stage (g :: * -> *) a = SelectQueryInternal
-    { unSelectQueryInternal :: StateT (Int, Int) (Writer (SelectClauses g)) (FieldsSelector Ref a)
+    { unSelectQueryInternal :: SelectQueryM g (FieldsSelector Ref a)
     }
 
 data From g a where
@@ -151,18 +153,13 @@ selectInternal f = f . SelectQueryInternal . return $ Raw
 
 from
     :: (PersistEntity record)
-    => (RRef (Entity record)-> RelationAlias (Entity record) -> SelectQueryInternal Neutral g (Entity record) -> SelectQueryInternal s1 g a)
+    => (RRef (Entity record) -> RelationAlias (Entity record) -> SelectQueryInternal Neutral g (Entity record) -> SelectQueryInternal s1 g a)
     -> SelectQueryInternal Neutral g x
     -> SelectQueryInternal s1 g a
 from f (SelectQueryInternal pre) = SelectQueryInternal $ do
-    _ <- pre
-    (i, j) <- State.get
-    State.put (i + 1, j)
-    let rref = RRef i
-        ref = RelationRef rref
-        alias = RelationAlias i
-        sref = id :$: ref
-    lift . Writer.tell . SelectClauses . return . From $ FromEntity i alias
+    i <- prepareFrom pre
+    let (rref, ref, alias, sref) = mkEntityRefs i
+    tellSelectClause . From $ FromEntity i alias
     unSelectQueryInternal . f rref alias . SelectQueryInternal . return $ sref
 
 fromSub
@@ -170,14 +167,36 @@ fromSub
     -> (FieldsSelector Ref b -> RelationAlias b -> SelectQueryInternal Neutral g b -> SelectQueryInternal s1 g a)
     -> SelectQueryInternal Neutral g x
     -> SelectQueryInternal s1 g a
-fromSub sub @ (SelectQuery subq) f (SelectQueryInternal pre) = SelectQueryInternal $ do
-    _ <- pre
-    (i, j) <- State.get
-    State.put (i + 1, j)
-    let (sref, _) = Writer.runWriter . flip State.evalStateT (0, 0) . unSelectQueryInternal $ subq
-        qref = qualifySelectorRef i sref
+fromSub sub @ subq f (SelectQueryInternal pre) = SelectQueryInternal $ do
+    i <- prepareFrom pre
+    let qref = qualifySelectorRef i . evalSubQueryRef $ subq
         alias = RelationAliasSub i qref
-    lift . Writer.tell . SelectClauses . return . From $ FromSubQuery i sub
+    tellSelectClause . From $ FromSubQuery i sub
+    unSelectQueryInternal . f qref alias . SelectQueryInternal . return $ qref
+
+joinOn
+    :: (PersistEntity record)
+    => (RRef (Entity record) -> g Bool)
+    -> (RRef (Entity record) -> RelationAlias (Entity record) -> SelectQueryInternal Neutral g (Entity record) -> SelectQueryInternal s1 g a)
+    -> SelectQueryInternal Neutral g x
+    -> SelectQueryInternal s1 g a
+joinOn cond f (SelectQueryInternal pre) = SelectQueryInternal $ do
+    i <- prepareFrom pre
+    let (rref, ref, alias, sref) = mkEntityRefs i
+    tellSelectClause $ Join (FromEntity i alias) (Just $ cond rref)
+    unSelectQueryInternal . f rref alias . SelectQueryInternal . return $ sref
+
+joinOnSub
+    :: SelectQuery g b
+    -> (FieldsSelector Ref b -> g Bool)
+    -> (FieldsSelector Ref b -> RelationAlias b -> SelectQueryInternal Neutral g b -> SelectQueryInternal s1 g a)
+    -> SelectQueryInternal Neutral g x
+    -> SelectQueryInternal s1 g a
+joinOnSub sub @ subq cond f (SelectQueryInternal pre) = SelectQueryInternal $ do
+    i <- prepareFrom pre
+    let qref = qualifySelectorRef i . evalSubQueryRef $ subq
+        alias = RelationAliasSub i qref
+    tellSelectClause $ Join (FromSubQuery i sub) (Just $ cond qref)
     unSelectQueryInternal . f qref alias . SelectQueryInternal . return $ qref
 
 resultAs
@@ -335,3 +354,25 @@ afieldsToARefs :: AFields g xs -> ARefs g xs
 afieldsToARefs = runIdentity . HList.htraverse f
     where
     f a = Identity (ARef a)
+
+prepareFrom :: SelectQueryM g b -> SelectQueryM g Int
+prepareFrom pre = do
+    _ <- pre
+    (i, j) <- State.get
+    State.put (i + 1, j)
+    return i
+
+evalSubQueryRef :: SelectQuery g a -> FieldsSelector Ref a
+evalSubQueryRef (SelectQuery a) =
+    fst . Writer.runWriter . flip State.evalStateT (0, 0) . unSelectQueryInternal $ a
+
+tellSelectClause :: SelectClause g -> SelectQueryM g ()
+tellSelectClause = lift . Writer.tell . SelectClauses . return
+
+mkEntityRefs :: (PersistEntity a) => Int -> (RRef (Entity a), Ref (Entity a), RelationAlias (Entity a), FieldsSelector Ref (Entity a))
+mkEntityRefs i =
+    let rref = RRef i
+        ref = RelationRef rref
+        alias = RelationAlias i
+        sref = id :$: ref
+    in (rref, ref, alias, sref)
