@@ -6,7 +6,6 @@
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE RankNTypes                 #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeFamilies               #-}
 module ExSql.Syntax.SelectQuery
     ( Field(..)
@@ -142,7 +141,7 @@ selectInternal :: (SelectQueryInternal s0 g [PersistValue] -> SelectQueryInterna
 selectInternal f = f . SelectQueryInternal . return $ Raw
 
 from
-    :: forall a g x record s0 s1. (PersistEntity record)
+    :: (PersistEntity record)
     => (RRef (Entity record)-> RelationAlias (Entity record) -> SelectQueryInternal Neutral g (Entity record) -> SelectQueryInternal s1 g a)
     -> SelectQueryInternal Neutral g x
     -> SelectQueryInternal s1 g a
@@ -150,9 +149,9 @@ from f (SelectQueryInternal pre) = SelectQueryInternal $ do
     _ <- pre
     (i, j) <- State.get
     State.put (i + 1, j)
-    let rref = RRef i :: RRef (Entity record)
+    let rref = RRef i
         ref = RelationRef rref
-        alias = RelationAlias i :: RelationAlias (Entity record)
+        alias = RelationAlias i
         sref = id :$: ref
     lift . Writer.tell . SelectClauses . return $ From i alias
     unSelectQueryInternal . f rref alias . SelectQueryInternal . return $ sref
