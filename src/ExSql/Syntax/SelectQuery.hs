@@ -9,6 +9,7 @@
 {-# LANGUAGE TypeFamilies               #-}
 module ExSql.Syntax.SelectQuery
     ( Field(..)
+    , From(..)
     , SelectQuery(..)
     , SelectQueryInternal(..)
     , FieldsSelector(..)
@@ -74,10 +75,13 @@ newtype SelectQueryInternal stage (g :: * -> *) a = SelectQueryInternal
     { unSelectQueryInternal :: StateT (Int, Int) (Writer (SelectClauses g)) (FieldsSelector Ref a)
     }
 
+data From g a where
+    FromEntity :: PersistEntity record => Int -> proxy (Entity record) -> From g (Entity record)
+    FromSubQuery :: Int -> SelectQuery g a -> From g a
+
 data SelectClause (g :: * -> *) where
     Fields :: FieldsSelector (SelWithAlias g) a -> SelectClause g
-    From :: (PersistEntity record) => Int -> proxy (Entity record) -> SelectClause g
-    FromSub :: Int -> SelectQuery g a -> SelectClause g
+    From :: From g a -> SelectClause g
     Where :: g Bool -> SelectClause g
     GroupBy :: AFields g xs -> SelectClause g
     OrderBy :: g b -> OrderType -> SelectClause g
@@ -95,6 +99,10 @@ instance Hoist (SelectQueryInternal s) where
     hoist f (SelectQueryInternal a) = SelectQueryInternal $ State.mapStateT h a
         where
         h = Writer.mapWriter $ \(x, SelectClauses w) -> (x, SelectClauses (fmap (hoist' f) w))
+
+instance Hoist From where
+    hoist _ (FromEntity i a)   = FromEntity i a
+    hoist f (FromSubQuery i a) = FromSubQuery i (hoist f a)
 
 data OrderType = Asc | Desc deriving (Show, Eq)
 
@@ -153,7 +161,7 @@ from f (SelectQueryInternal pre) = SelectQueryInternal $ do
         ref = RelationRef rref
         alias = RelationAlias i
         sref = id :$: ref
-    lift . Writer.tell . SelectClauses . return $ From i alias
+    lift . Writer.tell . SelectClauses . return . From $ FromEntity i alias
     unSelectQueryInternal . f rref alias . SelectQueryInternal . return $ sref
 
 fromSub
@@ -168,7 +176,7 @@ fromSub sub @ (SelectQuery subq) f (SelectQueryInternal pre) = SelectQueryIntern
     let (sref, _) = Writer.runWriter . flip State.evalStateT (0, 0) . unSelectQueryInternal $ subq
         qref = qualifySelectorRef i sref
         alias = RelationAliasSub i qref
-    lift . Writer.tell . SelectClauses . return . FromSub i $ sub
+    lift . Writer.tell . SelectClauses . return . From $ FromSubQuery i sub
     unSelectQueryInternal . f qref alias . SelectQueryInternal . return $ qref
 
 resultAs
@@ -291,8 +299,7 @@ count = mkAst . return . Count
 
 hoist' :: (forall x. m x -> n x) -> SelectClause m -> SelectClause n
 hoist' f (Fields a)    = Fields (hoist (hoist f) a)
-hoist' _ (From i a)    = From i a
-hoist' f (FromSub i a) = FromSub i (hoist f a)
+hoist' f (From a)    = From (hoist f a)
 hoist' f (Where a)     = Where (f a)
 hoist' f (GroupBy fs)  = GroupBy . runIdentity . HList.htraverse (Identity . hoist f) $ fs
 hoist' f (OrderBy a t) = OrderBy (f a) t

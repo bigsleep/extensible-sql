@@ -46,7 +46,7 @@ import ExSql.Syntax.Internal.Types
 import ExSql.Syntax.Relativity (Associativity(..), Precedence(..),
                                 Relativity(..))
 import ExSql.Syntax.SelectQuery (ARef(..), AggregateFunction(..), Field(..),
-                                 FieldsSelector(..), OrderType(..),
+                                 FieldsSelector(..), From(..), OrderType(..),
                                  SelectQuery(..), SelectQueryInternal(..))
 import qualified ExSql.Syntax.SelectQuery as Syntax
 
@@ -177,8 +177,7 @@ renderSelect p (SelectQuery query) = (convert, clauses)
 
 renderSelectClause :: ExprPrinterType g -> Syntax.SelectClause g -> SelectClauses
 renderSelectClause p (Syntax.Fields fs) = mempty { scField = renderSelectorFields p fs }
-renderSelectClause _ (Syntax.From i a) = mempty { scFrom = renderFrom i a }
-renderSelectClause p (Syntax.FromSub i q) = mempty { scFrom = renderFromSub p i q }
+renderSelectClause p (Syntax.From a) = mempty { scFrom = renderFrom p a }
 renderSelectClause p (Syntax.Where w) = mempty { scWhere = Clause . return . p Nothing Nothing $ w }
 renderSelectClause p (Syntax.GroupBy fs) = mempty { scGroupBy = renderAFields p fs }
 renderSelectClause p (Syntax.OrderBy a t) = mempty { scOrderBy = OrderByClause . return $ (p Nothing Nothing a, t) }
@@ -218,15 +217,14 @@ mkPersistConvertInternal f = do
     r <- lift . Persist.fromPersistValue $ val
     return (f r)
 
-renderFrom :: (Persist.PersistEntity record) => Int -> proxy (Persist.Entity record) -> Clause
-renderFrom eid ref =
+renderFrom :: ExprPrinterType g -> From g a -> Clause
+renderFrom _ (FromEntity eid ref) =
     let tableName = Persist.unDBName . Persist.entityDB . Persist.entityDef . fmap Persist.entityVal . toProxy $ ref
         alias = printRelationAlias eid
         a = TLB.fromText tableName <> TLB.fromText " AS " <> alias
     in Clause . return . StatementBuilder $ (a, mempty)
 
-renderFromSub :: ExprPrinterType g -> Int -> SelectQuery g a -> Clause
-renderFromSub p tid query =
+renderFrom p (FromSubQuery tid query) =
     let alias = printRelationAlias tid
         StatementBuilder (t, ps) = printSelect p query
         a = addBracket t <> TLB.fromText " AS " <> alias
