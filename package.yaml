@@ -21,6 +21,7 @@ description:         Please see the README on Github at <https://github.com/gith
 
 dependencies:
 - base >= 4.8 && < 5
+- containers
 - dlist
 - extensible
 - mtl
@@ -58,7 +59,6 @@ tests:
     - -fno-warn-unused-imports
     dependencies:
     - conduit
-    - containers
     - exceptions
     - extensible-sql
     - hspec == 2.*

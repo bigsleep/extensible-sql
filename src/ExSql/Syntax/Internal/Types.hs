@@ -23,6 +23,7 @@ module ExSql.Syntax.Internal.Types
     , ValueList
     , pattern Nil
     , pattern (:<)
+    , rrefId
     ) where
 
 import Control.Monad.Trans.State.Strict (StateT)
@@ -39,6 +40,10 @@ data RelationAlias a where
 data RRef a where
     RRef :: (PersistEntity a) => Int -> RRef (Entity a)
     RRefSub :: Int -> FieldsSelector Ref a -> RRef a
+
+rrefId :: RRef a -> Int
+rrefId (RRef i)      = i
+rrefId (RRefSub i _) = i
 
 newtype FieldAlias a = FieldAlias Int
     deriving (Show, Eq)

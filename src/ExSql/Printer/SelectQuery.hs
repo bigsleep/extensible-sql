@@ -26,6 +26,8 @@ import qualified Data.DList as DList
 import Data.Extensible (Membership)
 import qualified Data.Extensible.HList as HList (hfoldrWithIndex)
 import Data.Int (Int64)
+import Data.IntMap.Strict (IntMap)
+import qualified Data.IntMap.Strict as IntMap
 import Data.List (intersperse, uncons)
 import Data.Maybe (maybe)
 import Data.Proxy (Proxy(..))
@@ -53,7 +55,10 @@ import qualified ExSql.Syntax.SelectQuery as Syntax
 newtype Clause = Clause (DList StatementBuilder)
     deriving (Show, Semigroup, Monoid, Eq)
 
-newtype JoinClause = JoinClause (DList (StatementBuilder, Maybe StatementBuilder))
+newtype JoinClause = JoinClause (IntMap StatementBuilder)
+    deriving (Show, Semigroup, Monoid, Eq)
+
+newtype OnClause = OnClause (IntMap StatementBuilder)
     deriving (Show, Semigroup, Monoid, Eq)
 
 newtype OrderByClause = OrderByClause (DList (StatementBuilder, OrderType))
@@ -66,6 +71,7 @@ data SelectClauses = SelectClauses
     { scField   :: !Clause
     , scFrom    :: !Clause
     , scJoin    :: !JoinClause
+    , scOn      :: !OnClause
     , scWhere   :: !Clause
     , scGroupBy :: !Clause
     , scOrderBy :: !OrderByClause
@@ -73,11 +79,11 @@ data SelectClauses = SelectClauses
     } deriving (Show, Eq)
 
 instance Semigroup SelectClauses where
-    (<>) (SelectClauses field0 from0 join0 where0 groupBy0 orderBy0 (LimitClause offset0 limit0)) (SelectClauses field1 from1 join1 where1 groupBy1 orderBy1 (LimitClause offset1 limit1)) =
-        SelectClauses (field0 <> field1) (from0 <> from1) (join0 <> join1) (where0 <> where1) (groupBy0 <> groupBy1) (orderBy0 <> orderBy1) (LimitClause (offset0 `mplus` offset1) (limit0 `mplus` limit1))
+    (<>) (SelectClauses field0 from0 join0 on0 where0 groupBy0 orderBy0 (LimitClause offset0 limit0)) (SelectClauses field1 from1 join1 on1 where1 groupBy1 orderBy1 (LimitClause offset1 limit1)) =
+        SelectClauses (field0 <> field1) (from0 <> from1) (join0 <> join1) (on0 <> on1) (where0 <> where1) (groupBy0 <> groupBy1) (orderBy0 <> orderBy1) (LimitClause (offset0 `mplus` offset1) (limit0 `mplus` limit1))
 
 instance Monoid SelectClauses where
-    mempty = SelectClauses mempty mempty mempty mempty mempty mempty (LimitClause Nothing Nothing)
+    mempty = SelectClauses mempty mempty mempty mempty mempty mempty mempty (LimitClause Nothing Nothing)
     mappend = (<>)
 
 printSelect :: ExprPrinterType g -> SelectQuery g a -> StatementBuilder
@@ -117,11 +123,11 @@ printAggregateFunction p l r (AggField (ARef field)) = printField p l r field
 printAggregateFunction p _ _ (Count a) = printFun "COUNT" [p Nothing Nothing a]
 
 printSelectClauses :: SelectClauses -> StatementBuilder
-printSelectClauses (SelectClauses field from join where_ groupBy orderBy limit) =
+printSelectClauses (SelectClauses field from join on where_ groupBy orderBy limit) =
     StatementBuilder ("SELECT ", mempty)
     <> printFieldClause field
     <> printFromClause from
-    <> printJoinClause join
+    <> printJoinOnClause join on
     <> printWhereClause where_
     <> printGroupByClause groupBy
     <> printOrderByClause orderBy
@@ -140,15 +146,18 @@ printFromClause (Clause xs) = StatementBuilder (t, mconcat ps)
     (ts, ps) = unzip . map unStatementBuilder . DList.toList $ xs
     t = TLB.fromText " FROM " <> mconcat (intersperse (TLB.fromText ", ") ts)
 
-printJoinClause :: JoinClause -> StatementBuilder
-printJoinClause (JoinClause DList.Nil) = StatementBuilder mempty
-printJoinClause (JoinClause xs) = StatementBuilder (t, p)
+printJoinOnClause :: JoinClause -> OnClause -> StatementBuilder
+printJoinOnClause (JoinClause js) (OnClause os) = StatementBuilder (t, p)
     where
+    merged = IntMap.mergeWithKey
+        (\_ a b -> Just (a, Just b))
+        (IntMap.map $ flip (,) Nothing)
+        (const IntMap.empty) js os
     f (StatementBuilder (a0, p0), Just (StatementBuilder (a1, p1))) =
         (TLB.fromText " JOIN " <> a0 <> " ON " <> a1, p0 <> p1)
     f (StatementBuilder (a0, p0), Nothing) =
         (TLB.fromText " JOIN " <> a0, p0)
-    (ts, ps) = unzip . map f . DList.toList $ xs
+    (ts, ps) = unzip . map f . IntMap.elems $ merged
     t = mconcat ts
     p = mconcat ps
 
@@ -195,7 +204,8 @@ renderSelect p (SelectQuery query) = (convert, clauses)
 renderSelectClause :: ExprPrinterType g -> Syntax.SelectClause g -> SelectClauses
 renderSelectClause p (Syntax.Fields fs) = mempty { scField = renderSelectorFields p fs }
 renderSelectClause p (Syntax.From a) = mempty { scFrom = renderFrom p a }
-renderSelectClause p (Syntax.Join a cond) = mempty { scJoin = renderJoin p a cond }
+renderSelectClause p (Syntax.Join a) = mempty { scJoin = renderJoin p a }
+renderSelectClause p (Syntax.On a cond) = mempty { scOn = renderOn p a cond }
 renderSelectClause p (Syntax.Where w) = mempty { scWhere = Clause . return . p Nothing Nothing $ w }
 renderSelectClause p (Syntax.GroupBy fs) = mempty { scGroupBy = renderAFields p fs }
 renderSelectClause p (Syntax.OrderBy a t) = mempty { scOrderBy = OrderByClause . return $ (p Nothing Nothing a, t) }
@@ -251,8 +261,11 @@ renderFrom' p (FromSubQuery tid query) =
         a = addBracket t <> TLB.fromText " AS " <> alias
     in StatementBuilder (a, ps)
 
-renderJoin :: ExprPrinterType g -> From g a -> Maybe (g Bool) -> JoinClause
-renderJoin p a cond = JoinClause . return $  (renderFrom' p a, p Nothing Nothing <$> cond)
+renderJoin :: ExprPrinterType g -> From g a -> JoinClause
+renderJoin p a = JoinClause . IntMap.singleton (Syntax.fromId a) $  renderFrom' p a
+
+renderOn :: ExprPrinterType g -> RRef a -> g Bool -> OnClause
+renderOn p a cond = OnClause . IntMap.singleton (rrefId a) $  p Nothing Nothing cond
 
 renderSelectorFields :: ExprPrinterType g -> FieldsSelector (SelWithAlias g) a -> Clause
 renderSelectorFields _ Raw = mempty
