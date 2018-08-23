@@ -255,7 +255,7 @@ renderFrom' _ (FromEntity eid ref) =
         a = TLB.fromText tableName <> TLB.fromText " AS " <> alias
     in StatementBuilder (a, mempty)
 
-renderFrom' p (FromSubQuery tid query) =
+renderFrom' p (FromSubQuery tid query _) =
     let alias = printRelationAlias tid
         StatementBuilder (t, ps) = printSelect p query
         a = addBracket t <> TLB.fromText " AS " <> alias
