@@ -35,8 +35,10 @@ module ExSql.Syntax.SelectQuery
     , selectAgg
     , selectInternal
     , from
+    , fromEntity
     , fromSub
     , join
+    , joinEntity
     , joinSub
     , on
     , where_
@@ -209,54 +211,60 @@ selectInternal :: (SelectQueryInternal s0 g [PersistValue] -> SelectQueryInterna
 selectInternal f = f . SelectQueryInternal . return $ Raw
 
 from
+    :: FromProxy g b
+    -> (FieldsSelector Ref b -> RelationAlias b -> SelectQueryInternal Neutral g b -> SelectQueryInternal s1 g a)
+    -> SelectQueryInternal Neutral g x
+    -> SelectQueryInternal s1 g a
+from proxy f (SelectQueryInternal pre) = SelectQueryInternal $ do
+    i <- prepareFrom pre
+    let from_ = convertFromProxy i proxy
+        (rref, alias, sref) = mkAliasAndRef from_
+    tellSelectClause . From $ from_
+    unSelectQueryInternal . f sref alias . SelectQueryInternal . return $ sref
+
+fromEntity
     :: (PersistEntity record)
     => (RRef (Entity record) -> RelationAlias (Entity record) -> SelectQueryInternal Neutral g (Entity record) -> SelectQueryInternal s1 g a)
     -> SelectQueryInternal Neutral g x
     -> SelectQueryInternal s1 g a
-from f (SelectQueryInternal pre) = SelectQueryInternal $ do
-    i <- prepareFrom pre
-    let from_ = FromEntity i Proxy
-        (rref, alias, sref) = mkAliasAndRef from_
-    tellSelectClause . From $ from_
-    unSelectQueryInternal . f rref alias . SelectQueryInternal . return $ sref
+fromEntity f = from (FPEntity Proxy) g
+    where
+    g (_ :$: RelationRef rref) = f rref
 
 fromSub
     :: SelectQuery g b
     -> (FieldsSelector Ref b -> RelationAlias b -> SelectQueryInternal Neutral g b -> SelectQueryInternal s1 g a)
     -> SelectQueryInternal Neutral g x
     -> SelectQueryInternal s1 g a
-fromSub sub @ subq f (SelectQueryInternal pre) = SelectQueryInternal $ do
-    i <- prepareFrom pre
-    let qref = qualifySelectorRef i . evalSubQueryRef $ subq
-        from_ = FromSubQuery i sub qref
-        (_, alias, _) = mkAliasAndRef from_
-    tellSelectClause . From $ from_
-    unSelectQueryInternal . f qref alias . SelectQueryInternal . return $ qref
+fromSub = from . FPSubQuery
 
 join
+    :: FromProxy g b
+    -> (FieldsSelector Ref b -> RelationAlias b -> SelectQueryInternal Neutral g b -> SelectQueryInternal s1 g a)
+    -> SelectQueryInternal Neutral g x
+    -> SelectQueryInternal s1 g a
+join proxy f (SelectQueryInternal pre) = SelectQueryInternal $ do
+    i <- prepareFrom pre
+    let from_ = convertFromProxy i proxy
+        (_, alias, ref) = mkAliasAndRef from_
+    tellSelectClause . Join $ from_
+    unSelectQueryInternal . f ref alias . SelectQueryInternal . return $ ref
+
+joinEntity
     :: (PersistEntity record)
     => (RRef (Entity record) -> RelationAlias (Entity record) -> SelectQueryInternal Neutral g (Entity record) -> SelectQueryInternal s1 g a)
     -> SelectQueryInternal Neutral g x
     -> SelectQueryInternal s1 g a
-join f (SelectQueryInternal pre) = SelectQueryInternal $ do
-    i <- prepareFrom pre
-    let from_ = FromEntity i Proxy
-        (rref, alias, sref) = mkAliasAndRef from_
-    tellSelectClause . Join $ from_
-    unSelectQueryInternal . f rref alias . SelectQueryInternal . return $ sref
+joinEntity f = join (FPEntity Proxy) g
+    where
+    g (_ :$: RelationRef rref) = f rref
 
 joinSub
     :: SelectQuery g b
     -> (FieldsSelector Ref b -> RelationAlias b -> SelectQueryInternal Neutral g b -> SelectQueryInternal s1 g a)
     -> SelectQueryInternal Neutral g x
     -> SelectQueryInternal s1 g a
-joinSub sub @ subq f (SelectQueryInternal pre) = SelectQueryInternal $ do
-    i <- prepareFrom pre
-    let qref = qualifySelectorRef i . evalSubQueryRef $ subq
-        from_ = FromSubQuery i sub qref
-        alias = RelationAliasSub i qref
-    tellSelectClause . Join $ from_
-    unSelectQueryInternal . f qref alias . SelectQueryInternal . return $ qref
+joinSub = join . FPSubQuery
 
 on :: RRef b -> g Bool -> SelectQueryInternal s g a -> SelectQueryInternal s g a
 on ref cond (SelectQueryInternal q) = SelectQueryInternal $ do

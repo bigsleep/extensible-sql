@@ -55,7 +55,7 @@ pp :: Maybe Relativity -> Maybe Relativity -> Expr Nodes Identity a -> Statement
 pp = printExpr (printers pp)
 
 s1 :: SelectQuery E (Entity Person)
-s1 = select_ . from $ \_ _ -> where_ e1
+s1 = select_ . fromEntity $ \_ _ -> where_ e1
 
 main :: IO ()
 main = do

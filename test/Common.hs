@@ -114,7 +114,7 @@ runSelect query = do
 
 testSelect1 :: Run -> Spec
 testSelect1 run = it "select1" $ do
-    let query = select_ . from $ \(_ :: RRef (Persist.Entity Driver)) _ -> id
+    let query = select_ . fromEntity $ \(_ :: RRef (Persist.Entity Driver)) _ -> id
     r <- run $ do
         Persist.rawExecute "delete from driver" []
         _ <- Persist.insert driver1

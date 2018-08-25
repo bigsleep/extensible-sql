@@ -75,13 +75,13 @@ printers p = Printer (printAggregateFunction p)
     <: nil
 
 sq1 :: SelectQuery (E Identity) (Entity Person)
-sq1 = select_ . from $ \_ _ -> id
+sq1 = select_ . fromEntity $ \_ _ -> id
 
 sq2 :: SelectQuery (E Identity) (Int64, Text, Int64)
-sq2 = select . from $ \(_ :: RRef (Entity Person)) _ -> resultAs ((,,) :$: Sel (int 1) :*: Sel (text "a") :*: Sel (int 2)) $ const id
+sq2 = select . fromEntity $ \(_ :: RRef (Entity Person)) _ -> resultAs ((,,) :$: Sel (int 1) :*: Sel (text "a") :*: Sel (int 2)) $ const id
 
 sq3 :: SelectQuery (E Identity) (Text, Int)
-sq3 = select . from $ \ref _ ->
+sq3 = select . fromEntity $ \ref _ ->
         resultAs ((,) :$: Sel (column ref PersonName) :*: Sel (column ref PersonAge)) $
             \(_ :$: f1 :*: _) -> orderBy (field f1) Asc
 
@@ -94,7 +94,7 @@ sq5 = select . fromSub sq1 $ \(_ :$: RelationRef sq1ref) sq1alias ->
         resultAs ((,) :$: Star sq1alias :*: Sel (column sq1ref PersonAge)) $ const id
 
 sq6 :: SelectQuery (E Identity) (Int, Int64)
-sq6 = selectAgg . from $ \(person :: RRef (Entity Person)) _ ->
+sq6 = selectAgg . fromEntity $ \(person :: RRef (Entity Person)) _ ->
         groupBy (Column person PersonAge :< Nil) $ \(a :< _) ->
         aggResultAs ((,) :$: Sel (afield a) :*: Sel (count (int 1))) $ const id
 
