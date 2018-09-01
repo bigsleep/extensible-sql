@@ -293,8 +293,7 @@ renderSelectorFields p (s :*: Sel' a alias) =
     renderSelectorFields p s <> renderFieldClause (p Nothing Nothing a) alias
 
 renderFieldWildcard :: RelationAlias a -> Clause
-renderFieldWildcard (RelationAlias eid)      = renderFieldWildcardInternal eid
-renderFieldWildcard (RelationAliasSub eid _) = renderFieldWildcardInternal eid
+renderFieldWildcard (RelationAlias eid _)      = renderFieldWildcardInternal eid
 
 renderFieldWildcardInternal :: Int -> Clause
 renderFieldWildcardInternal eid =

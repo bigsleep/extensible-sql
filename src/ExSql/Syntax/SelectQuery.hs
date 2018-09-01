@@ -4,8 +4,10 @@
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE PatternSynonyms            #-}
+{-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeOperators              #-}
@@ -72,6 +74,8 @@ import Data.Int (Int64)
 import Data.Proxy (Proxy(..))
 import Data.Semigroup (Semigroup(..))
 import Data.Text (Text)
+import Data.Type.Bool
+import Data.Type.Equality
 import Database.Persist (Entity(..), PersistEntity(..), PersistField(..),
                          PersistValue)
 import qualified Database.Persist.Sql.Util as Persist (entityColumnCount)
@@ -112,30 +116,97 @@ data Joins g (xs :: [*]) where
     JNil :: Joins g '[]
     JCons :: JoinProxy t g a -> Joins g xs -> Joins g (JoinProxy t g a ': xs)
 
-data FromJoins g (xs :: [*]) where
-    FromJoins :: FromProxy g a -> Joins g xs -> FromJoins g (a ': xs)
+data FromJoins g a (xs :: [*]) where
+    FromJoins :: FromProxy g a -> Joins g xs -> FromJoins g a xs
 
 type family HandleNullableType (nullable :: Bool) x :: * where
     HandleNullableType 'True (Maybe x) = Maybe x
     HandleNullableType 'True x = Maybe x
     HandleNullableType 'False x = x
 
-type family IsRightNullable (xs :: [*]) :: Bool where
-    IsRightNullable '[] = 'False
-    IsRightNullable (JoinProxy 'RightJoin g a ': xs) = 'True
-    IsRightNullable (JoinProxy 'FullJoin g a ': xs) = 'True
-    IsRightNullable (JoinProxy t g a : xs) = IsRightNullable xs
+type family IsMaybe (a :: *) :: Bool where
+    IsMaybe (Maybe a) = 'True
+    IsMaybe a = 'False
 
-type family ConvertJoinTypes (a :: Bool) (xs :: [*]) :: [*] where
-    ConvertJoinTypes a '[] = '[]
-    ConvertJoinTypes 'True (JoinProxy t g a ': xs) = HandleNullableType 'True a ': ConvertJoinTypes 'True xs
-    ConvertJoinTypes 'False (JoinProxy 'LeftJoin g a ': xs) = HandleNullableType (IsRightNullable xs) a ': ConvertJoinTypes 'True xs
-    ConvertJoinTypes 'False (JoinProxy 'FullJoin g a ': xs) = HandleNullableType 'True a ': ConvertJoinTypes 'True xs
-    ConvertJoinTypes 'False (JoinProxy t g a ': xs) = HandleNullableType (IsRightNullable xs) a ': ConvertJoinTypes 'False xs
-    ConvertJoinTypes 'True (a ': xs) = HandleNullableType 'True a ': ConvertJoinTypes 'True xs
-    ConvertJoinTypes 'False (a ': xs) = HandleNullableType 'True a ': ConvertJoinTypes 'True xs
+type family IsNotMaybe (a :: *) :: Bool where
+    IsNotMaybe a = Not (IsMaybe a)
 
-data RefWithAlias a = RefWithAlias (FieldsSelector Ref a) (RelationAlias a)
+type family InList (x :: k) (xs :: [k]) :: Bool where
+    InList x (x ': _) = 'True
+    InList x (y ': xs) = InList x xs
+    InList x '[] = 'False
+
+class RightNullable (xs :: [*]) where
+    type RightNullableType xs :: Bool
+    rightNullable :: Joins g xs -> Proxy (RightNullableType xs)
+
+instance RightNullable '[] where
+    type RightNullableType '[] = 'False
+    rightNullable _ = Proxy
+
+instance (RightNullable xs) => RightNullable (JoinProxy x g a ': xs) where
+    type RightNullableType (JoinProxy x g a ': xs) = InList x ['RightJoin, 'FullJoin] || RightNullableType xs
+    rightNullable _ = Proxy
+
+class HandleFromProxy (n :: Bool) a where
+    type HandleFromProxyType n a :: *
+    handleFromProxy :: Proxy n -> FromProxy g a -> (From g a -> SelectClause g) -> SelectQueryM g (HandleFromProxyType n a)
+
+instance HandleFromProxy 'True a where
+    type HandleFromProxyType 'True a = RefWithAlias a (Maybe a)
+    handleFromProxy _ proxy sc = do
+        i <- prepareFrom $ return ()
+        let from_ = convertFromProxy i proxy
+            (sref, RelationAlias j x) = mkRefWithAlias from_
+            alias' = RelationAlias j (Nullable x)
+        tellSelectClause . sc $ from_
+        return (sref, alias')
+
+instance HandleFromProxy 'False a where
+    type HandleFromProxyType 'False a = RefWithAlias a a
+    handleFromProxy _ proxy sc = do
+        i <- prepareFrom $ return ()
+        let from_ = convertFromProxy i proxy
+        tellSelectClause . sc $ from_
+        return . mkRefWithAlias $ from_
+
+type RefWithAlias a b = (FieldsSelector Ref a, RelationAlias b)
+
+class HandleJoins (n :: Bool) (xs :: [*]) where
+    type NeedConvert n xs :: Bool
+    type HandleJoinsType n xs :: [*]
+    type LeftNullableType n xs :: Bool
+    needConvert :: Proxy n -> Joins g xs -> Proxy (NeedConvert n xs)
+    leftNullable :: Proxy n -> Joins g xs -> Proxy (LeftNullableType n xs)
+    handleJoins :: Proxy n -> Joins g xs -> SelectQueryM g (HList.HList Identity (HandleJoinsType n xs))
+
+instance HandleJoins n '[] where
+    type NeedConvert n '[] = 'False
+    type HandleJoinsType n '[] = '[]
+    type LeftNullableType n '[] = n
+    needConvert _ _ = Proxy
+    handleJoins _ _ = return HList.HNil
+
+instance
+    ( HandleJoins (n || InList x ['LeftJoin, 'FullJoin]) xs
+    , RightNullable xs
+    , HandleFromProxy ((n || x == 'FullJoin || RightNullableType xs) && IsNotMaybe a) a
+    ) => HandleJoins n (JoinProxy x g a ': xs) where
+    type NeedConvert n (JoinProxy x g a ': xs) = (n || x == 'FullJoin || RightNullableType xs) && IsNotMaybe a
+    type HandleJoinsType n (JoinProxy x g a ': xs) = HandleFromProxyType ((n || x == 'FullJoin || RightNullableType xs) && IsNotMaybe a) a ': HandleJoinsType (n || InList x ['LeftJoin, 'FullJoin]) xs
+    type LeftNullableType n (JoinProxy x g a ': xs) = n || InList x ['LeftJoin, 'FullJoin]
+    needConvert _ _ = Proxy
+    handleJoins n js @ (JCons (JoinProxy p) xs) = do
+        let n' = needConvert n js
+        a <- handleFromProxy n' p Join
+        xs <- handleJoins (leftNullable n js) xs
+        return (HList.HCons (return a) xs)
+
+handleFromJoins :: (RightNullable xs, HandleFromProxy (RightNullableType xs) a, HandleJoins 'False xs) => FromJoins g a xs -> SelectQueryM g (HList.HList Identity (HandleFromProxyType ('False || RightNullableType xs) a ': HandleJoinsType 'False xs))
+handleFromJoins (FromJoins p js) = do
+    a <- handleFromProxy (rightNullable js) p From
+    xs <- handleJoins (Proxy :: Proxy 'False) js
+    return (HList.HCons (return a) xs)
 
 data SelectClause (g :: * -> *) where
     Fields :: FieldsSelector (SelWithAlias g) a -> SelectClause g
@@ -220,7 +291,7 @@ from
 from proxy f (SelectQueryInternal pre) = SelectQueryInternal $ do
     i <- prepareFrom pre
     let from_ = convertFromProxy i proxy
-        (rref, alias, sref) = mkAliasAndRef from_
+        (sref, alias) = mkRefWithAlias from_
     tellSelectClause . From $ from_
     unSelectQueryInternal . f sref alias . SelectQueryInternal . return $ sref
 
@@ -249,7 +320,7 @@ join
 join proxy f (SelectQueryInternal pre) = SelectQueryInternal $ do
     i <- prepareFrom pre
     let from_ = convertFromProxy i proxy
-        (_, alias, ref) = mkAliasAndRef from_
+        (ref, alias) = mkRefWithAlias from_
     tellSelectClause . Join $ from_
     unSelectQueryInternal . f ref alias . SelectQueryInternal . return $ ref
 
@@ -314,9 +385,8 @@ resultAsInternal selector cont (SelectQueryInternal pre) = SelectQueryInternal $
         return selectorWithAlias
 
     aliasToRef :: SelWithAlias g a -> Ref a
-    aliasToRef (Star' (RelationAlias i))        = RelationRef (RRef i)
-    aliasToRef (Star' (RelationAliasSub i ref)) = RelationRef (RRefSub i ref)
-    aliasToRef (Sel' _ (FieldAlias i))          = FieldRef (FRef i)
+    aliasToRef (Star' (RelationAlias i ref)) = RelationRef (RRefSub i ref)
+    aliasToRef (Sel' _ (FieldAlias i))       = FieldRef (FRef i)
 
 where_ :: g Bool -> SelectQueryInternal s g a -> SelectQueryInternal s g a
 where_ a (SelectQueryInternal q) = SelectQueryInternal $ do
@@ -457,18 +527,18 @@ convertFromProxy i (FPSubQuery a) =
     let qref = qualifySelectorRef i . evalSubQueryRef $ a
     in FromSubQuery i a qref
 
-mkAliasAndRef :: From g a -> (RRef a, RelationAlias a, FieldsSelector Ref a)
-mkAliasAndRef (FromEntity i _) =
+mkRefWithAlias :: From g a -> RefWithAlias a a
+mkRefWithAlias (FromEntity i _) =
     let rref = RRef i
         ref = RelationRef rref
-        alias = RelationAlias i
         sref = id :$: ref
-    in (rref, alias, sref)
-mkAliasAndRef (FromSubQuery i subq qref) =
+        alias = RelationAlias i sref
+    in (sref, alias)
+mkRefWithAlias (FromSubQuery i subq qref) =
     let rref = RRefSub i qref
         ref = RelationRef rref
-        alias = RelationAliasSub i qref
-    in (rref, alias, qref)
+        alias = RelationAlias i qref
+    in (qref, alias)
 
 countFields :: Int -> FieldsSelector Ref a -> Int
 countFields i Raw = i

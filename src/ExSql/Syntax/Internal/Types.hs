@@ -18,7 +18,6 @@ module ExSql.Syntax.Internal.Types
     , Ref(..)
     , RelationAlias(..)
     , ResultType
-    , SResult
     , Sel(..)
     , SelWithAlias(..)
     , ValueList
@@ -35,8 +34,7 @@ import Database.Persist (Entity, PersistEntity(..), PersistField(..),
 import ExSql.Syntax.Class
 
 data RelationAlias a where
-    RelationAlias :: (PersistEntity a) => Int -> RelationAlias (Entity a)
-    RelationAliasSub :: Int -> FieldsSelector Ref a -> RelationAlias a
+    RelationAlias :: Int -> FieldsSelector Ref a -> RelationAlias a
 
 data RRef a where
     RRef :: (PersistEntity a) => Int -> RRef (Entity a)
@@ -84,8 +82,8 @@ instance Hoist SelWithAlias where
 data FieldsSelector g x where
     Raw :: FieldsSelector g [PersistValue]
     Nullable :: FieldsSelector g a -> FieldsSelector g (Maybe a)
-    (:$:) :: (KnownConstructor (SResult (ResultType b)), ConstructorType (SResult (ResultType b)) ~ (a -> b)) => (a -> b) -> g a -> FieldsSelector g b
-    (:*:) :: (KnownConstructor (SResult (ResultType b))) => FieldsSelector g (a -> b) -> g a -> FieldsSelector g b
+    (:$:) :: (KnownConstructor (ResultType b), ConstructorType (ResultType b) ~ (a -> b)) => (a -> b) -> g a -> FieldsSelector g b
+    (:*:) :: (KnownConstructor (ResultType b)) => FieldsSelector g (a -> b) -> g a -> FieldsSelector g b
 
 infixl 4 :$:, :*:
 
@@ -112,16 +110,14 @@ type family FunctionType (args :: [*]) result where
 class KnownConstructor a where
     type ConstructorType a
 
-data SResult a
+instance KnownConstructor (a, b) where
+    type ConstructorType (a, b) = (a -> b -> (a, b))
 
-instance KnownConstructor (SResult (a, b)) where
-    type ConstructorType (SResult (a, b)) = (a -> b -> (a, b))
+instance KnownConstructor (a, b, c) where
+    type ConstructorType (a, b, c) = (a -> b -> c -> (a, b, c))
 
-instance KnownConstructor (SResult (a, b, c)) where
-    type ConstructorType (SResult (a, b, c)) = (a -> b -> c -> (a, b, c))
+instance KnownConstructor (a, b, c, d) where
+    type ConstructorType (a, b, c, d) = (a -> b -> c -> d -> (a, b, c, d))
 
-instance KnownConstructor (SResult (a, b, c, d)) where
-    type ConstructorType (SResult (a, b, c, d)) = (a -> b -> c -> d -> (a, b, c, d))
-
-instance KnownConstructor (SResult (Entity a)) where
-    type ConstructorType (SResult (Entity a)) = (Entity a -> Entity a)
+instance KnownConstructor (Entity a) where
+    type ConstructorType (Entity a) = (Entity a -> Entity a)
