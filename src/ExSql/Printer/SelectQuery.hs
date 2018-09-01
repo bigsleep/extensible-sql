@@ -19,7 +19,7 @@ module ExSql.Printer.SelectQuery
 import Control.Monad (MonadPlus(..))
 import Control.Monad.Trans.Class (lift)
 import qualified Control.Monad.Trans.State.Strict as State (evalStateT, get,
-                                                            put)
+                                                            mapStateT, put)
 import qualified Control.Monad.Trans.Writer.Strict as Writer (runWriter)
 import Data.DList (DList)
 import qualified Data.DList as DList
@@ -213,6 +213,10 @@ renderSelectClause _ (Syntax.Limit limit) = mempty { scLimit = LimitClause Nothi
 renderSelectClause _ (Syntax.Offset offset) = mempty { scLimit = LimitClause (Just offset) Nothing }
 renderSelectClause _ Syntax.Initial = mempty
 
+mapLeft :: (a -> b) -> Either a c -> Either b c
+mapLeft f (Left a)  = Left (f a)
+mapLeft _ (Right c) = Right c
+
 toProxy :: f a -> Proxy a
 toProxy _ = Proxy
 
@@ -221,6 +225,17 @@ mkPersistConvert Raw =  do
     xs <- State.get
     State.put mempty
     return xs
+mkPersistConvert (Nullable a) = do
+    xs <- State.get
+    let l = length xs
+        c = Syntax.countFields l a
+    State.mapStateT (handleNullable xs c) (mkPersistConvert a)
+    where
+    handleNullable _ _ (Right (x, s)) = Right (Just x, s)
+    handleNullable vs c (Left HitNullValue) = do
+        (_, rest) <- maybe (Left . ConvertError $ "not enough input values") return (splitAtExactMay c vs)
+        return (Nothing, rest)
+    handleNullable _ _ (Left (ConvertError e)) = Left (ConvertError e)
 mkPersistConvert (f :$: RelationRef a @ RRef {}) = f <$> mkPersistConvertEntity a
 mkPersistConvert (f :$: RelationRef (RRefSub _ ref)) = f <$> mkPersistConvert ref
 mkPersistConvert (f :$: FieldRef {}) = mkPersistConvertInternal f
@@ -233,16 +248,16 @@ mkPersistConvertEntity a = do
     let def = Persist.entityDef . fmap Persist.entityVal . toProxy $ a
         colNum = Persist.entityColumnCount def
     xs <- State.get
-    (vals, rest) <- maybe (lift . Left $ "not enough input values") return (splitAtExactMay colNum xs)
+    (vals, rest) <- maybe (lift . Left . ConvertError $ "not enough input values") return (splitAtExactMay colNum xs)
     State.put rest
-    lift $ Persist.parseEntityValues def vals
+    lift . mapLeft ConvertError $ Persist.parseEntityValues def vals
 
 mkPersistConvertInternal :: (Persist.PersistField t) => (t -> a) -> PersistConvert a
 mkPersistConvertInternal f = do
     xs <- State.get
-    (val, rest) <- maybe (lift . Left $ "not enough input values") return (uncons xs)
+    (val, rest) <- maybe (lift . Left . ConvertError $ "not enough input values") return (uncons xs)
     State.put rest
-    r <- lift . Persist.fromPersistValue $ val
+    r <- lift . mapLeft ConvertError . Persist.fromPersistValue $ val
     return (f r)
 
 renderFrom :: ExprPrinterType g -> From g a -> Clause
@@ -269,6 +284,7 @@ renderOn p a cond = OnClause . IntMap.singleton (rrefId a) $  p Nothing Nothing 
 
 renderSelectorFields :: ExprPrinterType g -> FieldsSelector (SelWithAlias g) a -> Clause
 renderSelectorFields _ Raw = mempty
+renderSelectorFields p (Nullable a) = renderSelectorFields p a
 renderSelectorFields _ (_ :$: Star' alias) = renderFieldWildcard alias
 renderSelectorFields p (_ :$: Sel' a alias) = renderFieldClause (p Nothing Nothing a) alias
 renderSelectorFields p (s :*: Star' alias) =

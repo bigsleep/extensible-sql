@@ -21,6 +21,7 @@ module ExSql.Syntax.SelectQuery
     , OrderType(..)
     , (.^)
     , column
+    , countFields
     , field
     , fromId
     , groupBy
@@ -73,6 +74,7 @@ import Data.Semigroup (Semigroup(..))
 import Data.Text (Text)
 import Database.Persist (Entity(..), PersistEntity(..), PersistField(..),
                          PersistValue)
+import qualified Database.Persist.Sql.Util as Persist (entityColumnCount)
 import ExSql.Syntax.Class
 import ExSql.Syntax.Internal.SelectQueryStage
 import ExSql.Syntax.Internal.Types
@@ -230,6 +232,7 @@ fromEntity
 fromEntity f = from (FPEntity Proxy) g
     where
     g (_ :$: RelationRef rref) = f rref
+    g _                        = error "impossible"
 
 fromSub
     :: SelectQuery g b
@@ -258,6 +261,7 @@ joinEntity
 joinEntity f = join (FPEntity Proxy) g
     where
     g (_ :$: RelationRef rref) = f rref
+    g _                        = error "impossible"
 
 joinSub
     :: SelectQuery g b
@@ -404,6 +408,9 @@ hoist' _ Initial       = Initial
 
 mkSelectorWithAlias :: Int -> FieldsSelector (Sel g) a -> (FieldsSelector (SelWithAlias g) a, Int)
 mkSelectorWithAlias i Raw = (Raw, i)
+mkSelectorWithAlias i (Nullable a) =
+    let (x, y) = mkSelectorWithAlias i a
+    in (Nullable x, y)
 mkSelectorWithAlias i (f :$: Star a) = (f :$: Star' a, i)
 mkSelectorWithAlias i (f :$: Sel a) = (f :$: Sel' a (FieldAlias i), i + 1)
 mkSelectorWithAlias i (s :*: Star a) =
@@ -415,6 +422,7 @@ mkSelectorWithAlias i (s :*: Sel a) =
 
 qualifySelectorRef :: Int -> FieldsSelector Ref a -> FieldsSelector Ref a
 qualifySelectorRef _ Raw = Raw
+qualifySelectorRef tid (Nullable a) = Nullable $ qualifySelectorRef tid a
 qualifySelectorRef tid (f :$: a) = f :$: qualifyRef tid a
 qualifySelectorRef tid (s :*: a) = qualifySelectorRef tid s :*: qualifyRef tid a
 
@@ -461,3 +469,21 @@ mkAliasAndRef (FromSubQuery i subq qref) =
         ref = RelationRef rref
         alias = RelationAliasSub i qref
     in (rref, alias, qref)
+
+countFields :: Int -> FieldsSelector Ref a -> Int
+countFields i Raw = i
+countFields i (Nullable a) = countFields i a
+countFields i (_ :$: RelationRef rref) = countRRefFields i rref
+countFields _ (_ :$: FieldRef {}) = 1
+countFields i (a :*: RelationRef rref) = countFields i a + countRRefFields i rref
+countFields i (a :*: FieldRef {}) = countFields i a + 1
+
+countRRefFields :: Int -> RRef a -> Int
+countRRefFields _ a @ RRef {} = colCount
+    where
+    def = entityDef . fmap entityVal . toProxy $ a
+    colCount = Persist.entityColumnCount def
+countRRefFields i (RRefSub _ a) = countFields i a
+
+toProxy :: f a -> Proxy a
+toProxy _ = Proxy

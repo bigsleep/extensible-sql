@@ -8,7 +8,8 @@
 {-# LANGUAGE TypeOperators        #-}
 {-# LANGUAGE UndecidableInstances #-}
 module ExSql.Syntax.Internal.Types
-    ( FRef(..)
+    ( ConvertResult(..)
+    , FRef(..)
     , FieldAlias(..)
     , FieldsSelector(..)
     , KnownConstructor(..)
@@ -65,7 +66,12 @@ data SelWithAlias g a where
 
 data ValueList a
 
-type PersistConvert a = StateT [PersistValue] (Either Text) a
+data ConvertResult =
+    HitNullValue |
+    ConvertError Text
+    deriving (Show, Eq)
+
+type PersistConvert a = StateT [PersistValue] (Either ConvertResult) a
 
 instance Hoist Sel where
     hoist _ (Star a) = Star a
@@ -77,15 +83,17 @@ instance Hoist SelWithAlias where
 
 data FieldsSelector g x where
     Raw :: FieldsSelector g [PersistValue]
+    Nullable :: FieldsSelector g a -> FieldsSelector g (Maybe a)
     (:$:) :: (KnownConstructor (SResult (ResultType b)), ConstructorType (SResult (ResultType b)) ~ (a -> b)) => (a -> b) -> g a -> FieldsSelector g b
     (:*:) :: (KnownConstructor (SResult (ResultType b))) => FieldsSelector g (a -> b) -> g a -> FieldsSelector g b
 
 infixl 4 :$:, :*:
 
 instance Hoist FieldsSelector where
-    hoist _ Raw       = Raw
-    hoist f (g :$: a) = g :$: f a
-    hoist f (s :*: a) = hoist f s :*: f a
+    hoist _ Raw          = Raw
+    hoist f (Nullable a) = Nullable (hoist f a)
+    hoist f (g :$: a)    = g :$: f a
+    hoist f (s :*: a)    = hoist f s :*: f a
 
 pattern Nil :: HList.HList h '[]
 pattern Nil = HList.HNil
