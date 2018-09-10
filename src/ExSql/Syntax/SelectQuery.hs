@@ -90,12 +90,12 @@ data SelectQuery g a where
 type SelectQueryM g = StateT (Int, Int) (Writer (SelectClauses g))
 
 newtype SelectQueryInternal stage (g :: * -> *) a = SelectQueryInternal
-    { unSelectQueryInternal :: SelectQueryM g (FieldsSelector Ref a)
+    { unSelectQueryInternal :: SelectQueryM g (FieldsSelector (Sel g) a)
     }
 
 data From g a where
     FromEntity :: PersistEntity record => Int -> proxy (Entity record) -> From g (Entity record)
-    FromSubQuery :: Int -> SelectQuery g a -> FieldsSelector Ref a -> From g a
+    FromSubQuery :: Int -> SelectQuery g a -> FieldsSelector (Sel g) a -> From g a
 
 data FromProxy g a where
     FPEntity :: PersistEntity record => proxy (Entity record) -> FromProxy g (Entity record)
@@ -148,29 +148,31 @@ instance (RightNullable xs) => RightNullable (JoinProxy x g a ': xs) where
     type RightNullableType (JoinProxy x g a ': xs) = InList x ['RightJoin, 'FullJoin] || RightNullableType xs
     rightNullable _ = Proxy
 
-class HandleFromProxy (n :: Bool) a where
-    type HandleFromProxyType n a :: *
-    handleFromProxy :: Proxy n -> FromProxy g a -> (From g a -> SelectClause g) -> SelectQueryM g (HandleFromProxyType n a)
+class HandleFromProxy g (n :: Bool) a where
+    type HandleFromProxyType g n a :: *
+    handleFromProxy :: Proxy n -> FromProxy g a -> (From g a -> SelectClause g) -> SelectQueryM g (HandleFromProxyType g n a)
 
-instance HandleFromProxy 'True a where
-    type HandleFromProxyType 'True a = RefWithAlias a (Maybe a)
+instance HandleFromProxy g 'True a where
+    type HandleFromProxyType g 'True a = (FieldsSelector (Sel g) a, FieldsSelector Ref a, RelationAlias (Maybe a))
     handleFromProxy _ proxy sc = do
         i <- prepareFrom $ return ()
         let from_ = convertFromProxy i proxy
-            (sref, RelationAlias j x) = mkRefWithAlias from_
-            alias' = RelationAlias j (Nullable x)
+            (sel, sref, alias) = mkSelRefAlias from_
+            alias' = nullableAlias alias
         tellSelectClause . sc $ from_
-        return (sref, alias')
+        return (sel, sref, alias')
 
-instance HandleFromProxy 'False a where
-    type HandleFromProxyType 'False a = RefWithAlias a a
+        where
+        nullableAlias a @ (RelationAlias i) = RelationAliasSub i (Nullable $ id :$: Star a)
+        nullableAlias (RelationAliasSub i sel) = RelationAliasSub i (Nullable sel)
+
+instance HandleFromProxy g 'False a where
+    type HandleFromProxyType g 'False a = (FieldsSelector (Sel g) a, FieldsSelector Ref a, RelationAlias a)
     handleFromProxy _ proxy sc = do
         i <- prepareFrom $ return ()
         let from_ = convertFromProxy i proxy
         tellSelectClause . sc $ from_
-        return . mkRefWithAlias $ from_
-
-type RefWithAlias a b = (FieldsSelector Ref a, RelationAlias b)
+        return . mkSelRefAlias $ from_
 
 class HandleJoins (n :: Bool) (xs :: [*]) where
     type NeedConvert n xs :: Bool
@@ -190,10 +192,10 @@ instance HandleJoins n '[] where
 instance
     ( HandleJoins (n || InList x ['LeftJoin, 'FullJoin]) xs
     , RightNullable xs
-    , HandleFromProxy ((n || x == 'FullJoin || RightNullableType xs) && IsNotMaybe a) a
+    , HandleFromProxy g ((n || x == 'FullJoin || RightNullableType xs) && IsNotMaybe a) a
     ) => HandleJoins n (JoinProxy x g a ': xs) where
     type NeedConvert n (JoinProxy x g a ': xs) = (n || x == 'FullJoin || RightNullableType xs) && IsNotMaybe a
-    type HandleJoinsType n (JoinProxy x g a ': xs) = HandleFromProxyType ((n || x == 'FullJoin || RightNullableType xs) && IsNotMaybe a) a ': HandleJoinsType (n || InList x ['LeftJoin, 'FullJoin]) xs
+    type HandleJoinsType n (JoinProxy x g a ': xs) = HandleFromProxyType g ((n || x == 'FullJoin || RightNullableType xs) && IsNotMaybe a) a ': HandleJoinsType (n || InList x ['LeftJoin, 'FullJoin]) xs
     type LeftNullableType n (JoinProxy x g a ': xs) = n || InList x ['LeftJoin, 'FullJoin]
     needConvert _ _ = Proxy
     handleJoins n js @ (JCons (JoinProxy p) xs) = do
@@ -202,7 +204,7 @@ instance
         xs <- handleJoins (leftNullable n js) xs
         return (HList.HCons (return a) xs)
 
-handleFromJoins :: (RightNullable xs, HandleFromProxy (RightNullableType xs) a, HandleJoins 'False xs) => FromJoins g a xs -> SelectQueryM g (HList.HList Identity (HandleFromProxyType ('False || RightNullableType xs) a ': HandleJoinsType 'False xs))
+handleFromJoins :: (RightNullable xs, HandleFromProxy g (RightNullableType xs) a, HandleJoins 'False xs) => FromJoins g a xs -> SelectQueryM g (HList.HList Identity (HandleFromProxyType g ('False || RightNullableType xs) a ': HandleJoinsType 'False xs))
 handleFromJoins (FromJoins p js) = do
     a <- handleFromProxy (rightNullable js) p From
     xs <- handleJoins (Proxy :: Proxy 'False) js
@@ -227,13 +229,13 @@ instance Hoist SelectQuery where
     hoist f (SelectQuery a) = SelectQuery (hoist f a)
 
 instance Hoist (SelectQueryInternal s) where
-    hoist f (SelectQueryInternal a) = SelectQueryInternal $ State.mapStateT h a
+    hoist f (SelectQueryInternal a) = SelectQueryInternal . fmap (hoist (hoist f)) . State.mapStateT h $ a
         where
         h = Writer.mapWriter $ \(x, SelectClauses w) -> (x, SelectClauses (fmap (hoist' f) w))
 
 instance Hoist From where
     hoist _ (FromEntity i a)     = FromEntity i a
-    hoist f (FromSubQuery i a s) = FromSubQuery i (hoist f a) s
+    hoist f (FromSubQuery i a s) = FromSubQuery i (hoist f a) (hoist (hoist f) s)
 
 fromId :: From g a -> Int
 fromId (FromEntity i _)     = i
@@ -285,61 +287,61 @@ selectInternal f = f . SelectQueryInternal . return $ Raw
 
 from
     :: FromProxy g b
-    -> (FieldsSelector Ref b -> RelationAlias b -> SelectQueryInternal Neutral g b -> SelectQueryInternal s1 g a)
+    -> (FieldsSelector Ref b -> RRef b -> RelationAlias b -> SelectQueryInternal Neutral g b -> SelectQueryInternal s1 g a)
     -> SelectQueryInternal Neutral g x
     -> SelectQueryInternal s1 g a
 from proxy f (SelectQueryInternal pre) = SelectQueryInternal $ do
     i <- prepareFrom pre
     let from_ = convertFromProxy i proxy
-        (sref, alias) = mkRefWithAlias from_
+        rref = RRef i
+        (sel, sref, alias) = mkSelRefAlias from_
     tellSelectClause . From $ from_
-    unSelectQueryInternal . f sref alias . SelectQueryInternal . return $ sref
+    unSelectQueryInternal . f sref rref alias . SelectQueryInternal . return $ sel
 
 fromEntity
     :: (PersistEntity record)
     => (RRef (Entity record) -> RelationAlias (Entity record) -> SelectQueryInternal Neutral g (Entity record) -> SelectQueryInternal s1 g a)
     -> SelectQueryInternal Neutral g x
     -> SelectQueryInternal s1 g a
-fromEntity f = from (FPEntity Proxy) g
-    where
-    g (_ :$: RelationRef rref) = f rref
-    g _                        = error "impossible"
+fromEntity f = from (FPEntity Proxy) (const f)
 
 fromSub
     :: SelectQuery g b
     -> (FieldsSelector Ref b -> RelationAlias b -> SelectQueryInternal Neutral g b -> SelectQueryInternal s1 g a)
     -> SelectQueryInternal Neutral g x
     -> SelectQueryInternal s1 g a
-fromSub = from . FPSubQuery
+fromSub q f = from (FPSubQuery q) g
+    where
+    g a r = f (qualifySelectorRef (rrefId r) a)
 
 join
     :: FromProxy g b
-    -> (FieldsSelector Ref b -> RelationAlias b -> SelectQueryInternal Neutral g b -> SelectQueryInternal s1 g a)
+    -> (FieldsSelector Ref b -> RRef b -> RelationAlias b -> SelectQueryInternal Neutral g b -> SelectQueryInternal s1 g a)
     -> SelectQueryInternal Neutral g x
     -> SelectQueryInternal s1 g a
 join proxy f (SelectQueryInternal pre) = SelectQueryInternal $ do
     i <- prepareFrom pre
     let from_ = convertFromProxy i proxy
-        (ref, alias) = mkRefWithAlias from_
+        rref = RRef i
+        (sel, ref, alias) = mkSelRefAlias from_
     tellSelectClause . Join $ from_
-    unSelectQueryInternal . f ref alias . SelectQueryInternal . return $ ref
+    unSelectQueryInternal . f ref rref alias . SelectQueryInternal . return $ sel
 
 joinEntity
     :: (PersistEntity record)
     => (RRef (Entity record) -> RelationAlias (Entity record) -> SelectQueryInternal Neutral g (Entity record) -> SelectQueryInternal s1 g a)
     -> SelectQueryInternal Neutral g x
     -> SelectQueryInternal s1 g a
-joinEntity f = join (FPEntity Proxy) g
-    where
-    g (_ :$: RelationRef rref) = f rref
-    g _                        = error "impossible"
+joinEntity f = join (FPEntity Proxy) (const f)
 
 joinSub
     :: SelectQuery g b
     -> (FieldsSelector Ref b -> RelationAlias b -> SelectQueryInternal Neutral g b -> SelectQueryInternal s1 g a)
     -> SelectQueryInternal Neutral g x
     -> SelectQueryInternal s1 g a
-joinSub = join . FPSubQuery
+joinSub q f = join (FPSubQuery q) g
+    where
+    g a r = f (qualifySelectorRef (rrefId r) a)
 
 on :: RRef b -> g Bool -> SelectQueryInternal s g a -> SelectQueryInternal s g a
 on ref cond (SelectQueryInternal q) = SelectQueryInternal $ do
@@ -374,8 +376,9 @@ resultAsInternal selector cont (SelectQueryInternal pre) = SelectQueryInternal $
     _ <- pre
     selectorWithAlias <- mkRef selector
     lift . Writer.tell . SelectClauses . return $ Fields selectorWithAlias
-    let ref = hoist aliasToRef selectorWithAlias
-    unSelectQueryInternal . cont ref . SelectQueryInternal . return $ ref
+    let sel = hoist pickSel selectorWithAlias
+        ref = hoist aliasToRef selectorWithAlias
+    unSelectQueryInternal . cont ref . SelectQueryInternal . return $ sel
 
     where
     mkRef s = do
@@ -383,10 +386,6 @@ resultAsInternal selector cont (SelectQueryInternal pre) = SelectQueryInternal $
         let (selectorWithAlias, next) = mkSelectorWithAlias j s
         State.put (i, next)
         return selectorWithAlias
-
-    aliasToRef :: SelWithAlias g a -> Ref a
-    aliasToRef (Star' (RelationAlias i ref)) = RelationRef (RRefSub i ref)
-    aliasToRef (Sel' _ (FieldAlias i))       = FieldRef (FRef i)
 
 where_ :: g Bool -> SelectQueryInternal s g a -> SelectQueryInternal s g a
 where_ a (SelectQueryInternal q) = SelectQueryInternal $ do
@@ -497,10 +496,9 @@ qualifySelectorRef tid (f :$: a) = f :$: qualifyRef tid a
 qualifySelectorRef tid (s :*: a) = qualifySelectorRef tid s :*: qualifyRef tid a
 
 qualifyRef :: Int -> Ref a -> Ref a
-qualifyRef tid (RelationRef RRef {})         = RelationRef (RRef tid)
-qualifyRef tid (RelationRef (RRefSub _ ref)) = RelationRef (RRefSub tid ref)
-qualifyRef tid (FieldRef (FRef fid))         = FieldRef (QRef tid fid)
-qualifyRef tid (FieldRef (QRef _ fid))       = FieldRef (QRef tid fid)
+qualifyRef _ (RelationRef ref)         = RelationRef ref
+qualifyRef tid (FieldRef (FRef fid))   = FieldRef (QRef tid fid)
+qualifyRef tid (FieldRef (QRef _ fid)) = FieldRef (QRef tid fid)
 
 afieldsToARefs :: AFields g xs -> ARefs g xs
 afieldsToARefs = runIdentity . HList.htraverse f
@@ -514,8 +512,8 @@ prepareFrom pre = do
     State.put (i + 1, j)
     return i
 
-evalSubQueryRef :: SelectQuery g a -> FieldsSelector Ref a
-evalSubQueryRef (SelectQuery a) =
+evalSubQuerySel :: SelectQuery g a -> FieldsSelector (Sel g) a
+evalSubQuerySel (SelectQuery a) =
     fst . Writer.runWriter . flip State.evalStateT (0, 0) . unSelectQueryInternal $ a
 
 tellSelectClause :: SelectClause g -> SelectQueryM g ()
@@ -524,36 +522,44 @@ tellSelectClause = lift . Writer.tell . SelectClauses . return
 convertFromProxy :: Int -> FromProxy g a -> From g a
 convertFromProxy i (FPEntity a)   = FromEntity i a
 convertFromProxy i (FPSubQuery a) =
-    let qref = qualifySelectorRef i . evalSubQueryRef $ a
-    in FromSubQuery i a qref
+    FromSubQuery i a (evalSubQuerySel a)
 
-mkRefWithAlias :: From g a -> RefWithAlias a a
-mkRefWithAlias (FromEntity i _) =
+aliasToRef :: SelWithAlias g a -> Ref a
+aliasToRef (Star' a)               = RelationRef (RRef (relationAliasId a))
+aliasToRef (Sel' _ (FieldAlias i)) = FieldRef (FRef i)
+
+pickSel :: SelWithAlias g a -> Sel g a
+pickSel (Star' a)  = Star a
+pickSel (Sel' a _) = Sel a
+
+mkSelRefAlias:: From g a -> (FieldsSelector (Sel g) a, FieldsSelector Ref a, RelationAlias a)
+mkSelRefAlias (FromEntity i _) =
     let rref = RRef i
         ref = RelationRef rref
         sref = id :$: ref
-        alias = RelationAlias i sref
-    in (sref, alias)
-mkRefWithAlias (FromSubQuery i subq qref) =
-    let rref = RRefSub i qref
-        ref = RelationRef rref
-        alias = RelationAlias i qref
-    in (qref, alias)
+        alias = RelationAlias i
+        sel = id :$: Star alias
+    in (sel, sref, alias)
+mkSelRefAlias (FromSubQuery i _ sel) =
+    let alias = RelationAliasSub i sel
+        (selWithAlias, _) = mkSelectorWithAlias 0 sel
+        sref = hoist aliasToRef selWithAlias
+    in (sel, sref, alias)
 
-countFields :: Int -> FieldsSelector Ref a -> Int
+countFields :: Int -> FieldsSelector (Sel g) a -> Int
 countFields i Raw = i
 countFields i (Nullable a) = countFields i a
-countFields i (_ :$: RelationRef rref) = countRRefFields i rref
-countFields _ (_ :$: FieldRef {}) = 1
-countFields i (a :*: RelationRef rref) = countFields i a + countRRefFields i rref
-countFields i (a :*: FieldRef {}) = countFields i a + 1
+countFields i (_ :$: Star alias) = countRelationFields i alias
+countFields _ (_ :$: Sel {}) = 1
+countFields i (a :*: Star alias) = countFields i a + countRelationFields i alias
+countFields i (a :*: Sel {}) = countFields i a + 1
 
-countRRefFields :: Int -> RRef a -> Int
-countRRefFields _ a @ RRef {} = colCount
+countRelationFields :: Int -> RelationAlias a -> Int
+countRelationFields _ a @ RelationAlias {} = colCount
     where
     def = entityDef . fmap entityVal . toProxy $ a
     colCount = Persist.entityColumnCount def
-countRRefFields i (RRefSub _ a) = countFields i a
+countRelationFields i (RelationAliasSub _ sel) = countFields i sel
 
 toProxy :: f a -> Proxy a
 toProxy _ = Proxy

@@ -93,17 +93,12 @@ printSelect p query =
 
 printField :: ExprPrinterType g -> PrinterType g Field a
 printField _ l r (Field (RelationRef (RRef tid))) = printQF l r (printRelationAlias tid) (printFieldAlias 0)
-printField _ l r (Field (RelationRef (RRefSub tid _))) = printQF l r (printRelationAlias tid) (printFieldAlias 0)
 printField _ _ _ (Field (FieldRef (FRef fid))) = StatementBuilder (printFieldAlias fid, mempty)
 printField _ l r (Field (FieldRef (QRef tid fid))) = printQF l r (printRelationAlias tid) (printFieldAlias fid)
 printField _ l r (Column rref col) = printQF l r (printRelationAlias tid) (TLB.fromText columnName)
     where
-    tid = getTid rref
+    tid = rrefId rref
     columnName = Persist.unDBName . Persist.fieldDBName $ col
-
-getTid :: RRef a -> Int
-getTid (RRef tid)      = tid
-getTid (RRefSub tid _) = tid
 
 printQF
     :: Maybe Relativity
@@ -220,7 +215,7 @@ mapLeft _ (Right c) = Right c
 toProxy :: f a -> Proxy a
 toProxy _ = Proxy
 
-mkPersistConvert :: FieldsSelector Ref a -> PersistConvert a
+mkPersistConvert :: FieldsSelector (Sel g) a -> PersistConvert a
 mkPersistConvert Raw =  do
     xs <- State.get
     State.put mempty
@@ -236,14 +231,14 @@ mkPersistConvert (Nullable a) = do
         (_, rest) <- maybe (Left . ConvertError $ "not enough input values") return (splitAtExactMay c vs)
         return (Nothing, rest)
     handleNullable _ _ (Left (ConvertError e)) = Left (ConvertError e)
-mkPersistConvert (f :$: RelationRef a @ RRef {}) = f <$> mkPersistConvertEntity a
-mkPersistConvert (f :$: RelationRef (RRefSub _ ref)) = f <$> mkPersistConvert ref
-mkPersistConvert (f :$: FieldRef {}) = mkPersistConvertInternal f
-mkPersistConvert (s :*: RelationRef a @ RRef {}) = mkPersistConvert s <*> mkPersistConvertEntity a
-mkPersistConvert (s :*: RelationRef (RRefSub _ ref)) = mkPersistConvert s <*> mkPersistConvert ref
-mkPersistConvert (s :*: FieldRef {}) = mkPersistConvert s >>= mkPersistConvertInternal
+mkPersistConvert (f :$: Star a @ RelationAlias {}) = f <$> mkPersistConvertEntity a
+mkPersistConvert (f :$: Star (RelationAliasSub _ s)) = f <$> mkPersistConvert s
+mkPersistConvert (f :$: Sel {}) = mkPersistConvertInternal f
+mkPersistConvert (s :*: Star a @ RelationAlias {}) = mkPersistConvert s <*> mkPersistConvertEntity a
+mkPersistConvert (s0 :*: Star (RelationAliasSub _ s1)) = mkPersistConvert s0 <*> mkPersistConvert s1
+mkPersistConvert (s :*: Sel {}) = mkPersistConvert s >>= mkPersistConvertInternal
 
-mkPersistConvertEntity :: (Persist.PersistEntity a) => RRef (Persist.Entity a) -> PersistConvert (Persist.Entity a)
+mkPersistConvertEntity :: (Persist.PersistEntity a) => RelationAlias (Persist.Entity a) -> PersistConvert (Persist.Entity a)
 mkPersistConvertEntity a = do
     let def = Persist.entityDef . fmap Persist.entityVal . toProxy $ a
         colNum = Persist.entityColumnCount def
@@ -293,7 +288,8 @@ renderSelectorFields p (s :*: Sel' a alias) =
     renderSelectorFields p s <> renderFieldClause (p Nothing Nothing a) alias
 
 renderFieldWildcard :: RelationAlias a -> Clause
-renderFieldWildcard (RelationAlias eid _)      = renderFieldWildcardInternal eid
+renderFieldWildcard (RelationAlias eid)      = renderFieldWildcardInternal eid
+renderFieldWildcard (RelationAliasSub eid _) = renderFieldWildcardInternal eid
 
 renderFieldWildcardInternal :: Int -> Clause
 renderFieldWildcardInternal eid =

@@ -23,6 +23,7 @@ module ExSql.Syntax.Internal.Types
     , ValueList
     , pattern Nil
     , pattern (:<)
+    , relationAliasId
     , rrefId
     ) where
 
@@ -34,15 +35,17 @@ import Database.Persist (Entity, PersistEntity(..), PersistField(..),
 import ExSql.Syntax.Class
 
 data RelationAlias a where
-    RelationAlias :: Int -> FieldsSelector Ref a -> RelationAlias a
+    RelationAlias :: (PersistEntity a) => Int -> RelationAlias (Entity a)
+    RelationAliasSub :: Int -> FieldsSelector (Sel g) a -> RelationAlias a
 
-data RRef a where
-    RRef :: (PersistEntity a) => Int -> RRef (Entity a)
-    RRefSub :: Int -> FieldsSelector Ref a -> RRef a
+relationAliasId :: RelationAlias a -> Int
+relationAliasId (RelationAlias i)      = i
+relationAliasId (RelationAliasSub i _) = i
+
+newtype RRef a = RRef Int
 
 rrefId :: RRef a -> Int
-rrefId (RRef i)      = i
-rrefId (RRefSub i _) = i
+rrefId (RRef i) = i
 
 newtype FieldAlias a = FieldAlias Int
     deriving (Show, Eq)
