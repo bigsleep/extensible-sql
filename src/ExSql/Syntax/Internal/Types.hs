@@ -8,7 +8,8 @@
 {-# LANGUAGE TypeOperators        #-}
 {-# LANGUAGE UndecidableInstances #-}
 module ExSql.Syntax.Internal.Types
-    ( ConvertResult(..)
+    ( AggregatedE(..)
+    , ConvertResult(..)
     , FRef(..)
     , FieldAlias(..)
     , FieldsSelector(..)
@@ -19,6 +20,7 @@ module ExSql.Syntax.Internal.Types
     , RelationAlias(..)
     , ResultType
     , Sel(..)
+    , SelectStage(..)
     , SelWithAlias(..)
     , ValueList
     , pattern Nil
@@ -33,6 +35,15 @@ import Data.Text (Text)
 import Database.Persist (Entity, PersistEntity(..), PersistField(..),
                          PersistValue(..))
 import ExSql.Syntax.Class
+
+data SelectStage =
+    Neutral |
+    FieldsSpecified |
+    Aggregated |
+    AggFieldsSpecified
+    deriving (Show, Eq)
+
+data AggregatedE = AggregatedE
 
 data RelationAlias a where
     RelationAlias :: (PersistEntity a) => Int -> RelationAlias (Entity a)

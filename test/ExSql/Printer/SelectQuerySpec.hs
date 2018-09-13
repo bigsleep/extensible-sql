@@ -41,7 +41,6 @@ import ExSql.Printer.Types
 import ExSql.Syntax.Arithmetic
 import ExSql.Syntax.Class (Expr)
 import ExSql.Syntax.Comparison
-import ExSql.Syntax.Internal.SelectQueryStage
 import ExSql.Syntax.Internal.Types
 import ExSql.Syntax.Literal
 import ExSql.Syntax.Logical

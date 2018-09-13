@@ -80,7 +80,6 @@ import Database.Persist (Entity(..), PersistEntity(..), PersistField(..),
                          PersistValue)
 import qualified Database.Persist.Sql.Util as Persist (entityColumnCount)
 import ExSql.Syntax.Class
-import ExSql.Syntax.Internal.SelectQueryStage
 import ExSql.Syntax.Internal.Types
 import Prelude hiding (max, min)
 
@@ -89,7 +88,7 @@ data SelectQuery g a where
 
 type SelectQueryM g = StateT (Int, Int) (Writer (SelectClauses g))
 
-newtype SelectQueryInternal stage (g :: * -> *) a = SelectQueryInternal
+newtype SelectQueryInternal (s :: SelectStage) (g :: * -> *) a = SelectQueryInternal
     { unSelectQueryInternal :: SelectQueryM g (FieldsSelector (Sel g) a)
     }
 
@@ -270,16 +269,16 @@ type AFields g xs = HList.HList (Field g) xs
 
 type ARefs g xs = HList.HList (ARef g) xs
 
-select_ :: (SelectQueryInternal Neutral g [PersistValue] -> SelectQueryInternal Neutral g a) -> SelectQuery g a
+select_ :: (SelectQueryInternal 'Neutral g [PersistValue] -> SelectQueryInternal 'Neutral g a) -> SelectQuery g a
 select_ = SelectQuery . selectInternal
 
-select :: (SelectQueryInternal Neutral g [PersistValue] -> SelectQueryInternal FieldsSpecified g a) -> SelectQuery g a
+select :: (SelectQueryInternal 'Neutral g [PersistValue] -> SelectQueryInternal 'FieldsSpecified g a) -> SelectQuery g a
 select = SelectQuery . selectInternal
 
-selectAgg_ :: (SelectQueryInternal Neutral g [PersistValue] -> SelectQueryInternal Aggregated g a) -> SelectQuery g a
+selectAgg_ :: (SelectQueryInternal 'Neutral g [PersistValue] -> SelectQueryInternal 'Aggregated g a) -> SelectQuery g a
 selectAgg_ = SelectQuery . selectInternal
 
-selectAgg :: (SelectQueryInternal Neutral g [PersistValue] -> SelectQueryInternal AggFieldsSpecified g a) -> SelectQuery g a
+selectAgg :: (SelectQueryInternal 'Neutral g [PersistValue] -> SelectQueryInternal 'AggFieldsSpecified g a) -> SelectQuery g a
 selectAgg = SelectQuery . selectInternal
 
 selectInternal :: (SelectQueryInternal s0 g [PersistValue] -> SelectQueryInternal s1 g a) -> SelectQueryInternal s1 g a
@@ -287,8 +286,8 @@ selectInternal f = f . SelectQueryInternal . return $ Raw
 
 from
     :: FromProxy g b
-    -> (FieldsSelector Ref b -> RRef b -> RelationAlias b -> SelectQueryInternal Neutral g b -> SelectQueryInternal s1 g a)
-    -> SelectQueryInternal Neutral g x
+    -> (FieldsSelector Ref b -> RRef b -> RelationAlias b -> SelectQueryInternal 'Neutral g b -> SelectQueryInternal s1 g a)
+    -> SelectQueryInternal 'Neutral g x
     -> SelectQueryInternal s1 g a
 from proxy f (SelectQueryInternal pre) = SelectQueryInternal $ do
     i <- prepareFrom pre
@@ -300,15 +299,15 @@ from proxy f (SelectQueryInternal pre) = SelectQueryInternal $ do
 
 fromEntity
     :: (PersistEntity record)
-    => (RRef (Entity record) -> RelationAlias (Entity record) -> SelectQueryInternal Neutral g (Entity record) -> SelectQueryInternal s1 g a)
-    -> SelectQueryInternal Neutral g x
+    => (RRef (Entity record) -> RelationAlias (Entity record) -> SelectQueryInternal 'Neutral g (Entity record) -> SelectQueryInternal s1 g a)
+    -> SelectQueryInternal 'Neutral g x
     -> SelectQueryInternal s1 g a
 fromEntity f = from (FPEntity Proxy) (const f)
 
 fromSub
     :: SelectQuery g b
-    -> (FieldsSelector Ref b -> RelationAlias b -> SelectQueryInternal Neutral g b -> SelectQueryInternal s1 g a)
-    -> SelectQueryInternal Neutral g x
+    -> (FieldsSelector Ref b -> RelationAlias b -> SelectQueryInternal 'Neutral g b -> SelectQueryInternal s1 g a)
+    -> SelectQueryInternal 'Neutral g x
     -> SelectQueryInternal s1 g a
 fromSub q f = from (FPSubQuery q) g
     where
@@ -316,8 +315,8 @@ fromSub q f = from (FPSubQuery q) g
 
 join
     :: FromProxy g b
-    -> (FieldsSelector Ref b -> RRef b -> RelationAlias b -> SelectQueryInternal Neutral g b -> SelectQueryInternal s1 g a)
-    -> SelectQueryInternal Neutral g x
+    -> (FieldsSelector Ref b -> RRef b -> RelationAlias b -> SelectQueryInternal 'Neutral g b -> SelectQueryInternal s1 g a)
+    -> SelectQueryInternal 'Neutral g x
     -> SelectQueryInternal s1 g a
 join proxy f (SelectQueryInternal pre) = SelectQueryInternal $ do
     i <- prepareFrom pre
@@ -329,15 +328,15 @@ join proxy f (SelectQueryInternal pre) = SelectQueryInternal $ do
 
 joinEntity
     :: (PersistEntity record)
-    => (RRef (Entity record) -> RelationAlias (Entity record) -> SelectQueryInternal Neutral g (Entity record) -> SelectQueryInternal s1 g a)
-    -> SelectQueryInternal Neutral g x
+    => (RRef (Entity record) -> RelationAlias (Entity record) -> SelectQueryInternal 'Neutral g (Entity record) -> SelectQueryInternal s1 g a)
+    -> SelectQueryInternal 'Neutral g x
     -> SelectQueryInternal s1 g a
 joinEntity f = join (FPEntity Proxy) (const f)
 
 joinSub
     :: SelectQuery g b
-    -> (FieldsSelector Ref b -> RelationAlias b -> SelectQueryInternal Neutral g b -> SelectQueryInternal s1 g a)
-    -> SelectQueryInternal Neutral g x
+    -> (FieldsSelector Ref b -> RelationAlias b -> SelectQueryInternal 'Neutral g b -> SelectQueryInternal s1 g a)
+    -> SelectQueryInternal 'Neutral g x
     -> SelectQueryInternal s1 g a
 joinSub q f = join (FPSubQuery q) g
     where
@@ -352,20 +351,20 @@ on ref cond (SelectQueryInternal q) = SelectQueryInternal $ do
 resultAs
     :: (Ast g, expr ~ g Identity)
     => FieldsSelector (Sel expr) a1
-    -> (FieldsSelector Ref a1 -> SelectQueryInternal FieldsSpecified expr a1 -> SelectQueryInternal FieldsSpecified expr a2)
-    -> SelectQueryInternal Neutral expr a0
-    -> SelectQueryInternal FieldsSpecified expr a2
+    -> (FieldsSelector Ref a1 -> SelectQueryInternal 'FieldsSpecified expr a1 -> SelectQueryInternal 'FieldsSpecified expr a2)
+    -> SelectQueryInternal 'Neutral expr a0
+    -> SelectQueryInternal 'FieldsSpecified expr a2
 resultAs = resultAsInternal
 
 aggResultAs
-    :: (Ast g, expr0 ~ g (ReaderT Aggregated Identity), expr1 ~ g Identity)
+    :: (Ast g, expr0 ~ g (ReaderT AggregatedE Identity), expr1 ~ g Identity)
     => FieldsSelector (Sel expr0) a1
-    -> (FieldsSelector Ref a1 -> SelectQueryInternal AggFieldsSpecified expr1 a1 -> SelectQueryInternal AggFieldsSpecified expr1 a2)
-    -> SelectQueryInternal Aggregated expr1 a0
-    -> SelectQueryInternal AggFieldsSpecified expr1 a2
+    -> (FieldsSelector Ref a1 -> SelectQueryInternal 'AggFieldsSpecified expr1 a1 -> SelectQueryInternal 'AggFieldsSpecified expr1 a2)
+    -> SelectQueryInternal 'Aggregated expr1 a0
+    -> SelectQueryInternal 'AggFieldsSpecified expr1 a2
 aggResultAs selector = resultAsInternal selector'
     where
-    selector' = hoist (hoist (hoistAst (`runReaderT` Aggregated))) selector
+    selector' = hoist (hoist (hoistAst (`runReaderT` AggregatedE))) selector
 
 resultAsInternal
     :: FieldsSelector (Sel g) a1
@@ -396,8 +395,8 @@ where_ a (SelectQueryInternal q) = SelectQueryInternal $ do
 groupBy
     :: (Ast g, Functor m, Member (NodeTypes g) AggregateFunction)
     => AFields (g m) xs
-    -> (ARefs (g m) xs -> SelectQueryInternal Aggregated (g m) [PersistValue] -> SelectQueryInternal s (g m) a1)
-    -> SelectQueryInternal Neutral (g m) a0
+    -> (ARefs (g m) xs -> SelectQueryInternal 'Aggregated (g m) [PersistValue] -> SelectQueryInternal s (g m) a1)
+    -> SelectQueryInternal 'Neutral (g m) a0
     -> SelectQueryInternal s (g m) a1
 groupBy fields cont pre = SelectQueryInternal $ do
     _ <- unSelectQueryInternal pre
@@ -437,9 +436,9 @@ column t = mkAst . return . Column t
 
 infixl 9 .^
 
-type AggFunctionType g n a b = (Ast g, Monad n, Member (NodeTypes g) AggregateFunction) => g (ReaderT Aggregated n) a -> g (ReaderT Aggregated n) b
+type AggFunctionType g n a b = (Ast g, Monad n, Member (NodeTypes g) AggregateFunction) => g (ReaderT AggregatedE n) a -> g (ReaderT AggregatedE n) b
 
-afield :: (Ast g, Monad n, Member (NodeTypes g) AggregateFunction) => ARef (g n) a -> g (ReaderT Aggregated n) a
+afield :: (Ast g, Monad n, Member (NodeTypes g) AggregateFunction) => ARef (g n) a -> g (ReaderT AggregatedE n) a
 afield = mkAst . return . AggField . hoist (hoistAst lift)
 
 avg :: AggFunctionType g n a a
