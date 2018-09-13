@@ -2,6 +2,7 @@
 {-# LANGUAGE DataKinds        #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs            #-}
+{-# LANGUAGE PolyKinds        #-}
 {-# LANGUAGE RankNTypes       #-}
 {-# LANGUAGE TypeFamilies     #-}
 {-# LANGUAGE TypeOperators    #-}
@@ -18,14 +19,19 @@ module ExSql.Syntax.Class
     ) where
 
 import Data.Extensible ((:|)(..), Member, embed)
+import Data.Extensible.HList (HList(..), htraverse)
+import Data.Functor.Identity (Identity(..))
 
 class Ast g where
     type NodeTypes g :: [(* -> *) -> * -> *]
     mkAst :: (Monad m, Hoist v, Member (NodeTypes g) v) => m (v (g m) a) -> g m a
     hoistAst :: (Functor n) => (forall x. m x -> n x) -> g m a -> g n a
 
-class Hoist (t :: (* -> *) -> * -> *) where
+class Hoist (t :: (* -> *) -> k -> *) where
     hoist :: (forall x. f x -> g x) -> t f a -> t g a
+
+instance Hoist HList where
+    hoist f = runIdentity . htraverse (return . f)
 
 data Node m g a (f :: (* -> *) -> * -> *) where
     Node :: (Hoist f) => m (f g a) -> Node m g a f
