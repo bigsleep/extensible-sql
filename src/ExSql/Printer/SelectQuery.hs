@@ -277,15 +277,12 @@ renderJoin p a = JoinClause . IntMap.singleton (Syntax.fromId a) $  renderFrom' 
 renderOn :: ExprPrinterType g -> RRef a -> g Bool -> OnClause
 renderOn p a cond = OnClause . IntMap.singleton (rrefId a) $  p Nothing Nothing cond
 
-renderSelectorFields :: ExprPrinterType g -> FieldsSelector (SelWithAlias g) a -> Clause
-renderSelectorFields _ Raw = mempty
-renderSelectorFields p (Nullable a) = renderSelectorFields p a
-renderSelectorFields _ (_ :$: Star' alias) = renderFieldWildcard alias
-renderSelectorFields p (_ :$: Sel' a alias) = renderFieldClause (p Nothing Nothing a) alias
-renderSelectorFields p (s :*: Star' alias) =
-    renderSelectorFields p s <> renderFieldWildcard alias
-renderSelectorFields p (s :*: Sel' a alias) =
-    renderSelectorFields p s <> renderFieldClause (p Nothing Nothing a) alias
+renderSelectorFields :: ExprPrinterType g -> [Syntax.FieldClause g] -> Clause
+renderSelectorFields p = mconcat . map (renderFieldClause p)
+
+renderFieldClause :: ExprPrinterType g -> Syntax.FieldClause g -> Clause
+renderFieldClause _ (Syntax.FieldClause (Star' alias)) = renderFieldWildcard alias
+renderFieldClause p (Syntax.FieldClause (Sel' a alias)) = renderFieldAlias (p Nothing Nothing a) alias
 
 renderFieldWildcard :: RelationAlias a -> Clause
 renderFieldWildcard (RelationAlias eid)      = renderFieldWildcardInternal eid
@@ -297,8 +294,8 @@ renderFieldWildcardInternal eid =
         a = alias <> TLB.fromText ".*"
     in Clause . return . StatementBuilder $ (a, mempty)
 
-renderFieldClause :: StatementBuilder -> FieldAlias a -> Clause
-renderFieldClause a (FieldAlias fid) =
+renderFieldAlias :: StatementBuilder -> FieldAlias a -> Clause
+renderFieldAlias a (FieldAlias fid) =
     let alias = printFieldAlias fid
         StatementBuilder (e, ps) = a
         eas = e <> TLB.fromText " AS " <> alias

@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
@@ -14,6 +15,7 @@
 {-# LANGUAGE UndecidableInstances       #-}
 module ExSql.Syntax.SelectQuery
     ( Field(..)
+    , FieldClause(..)
     , From(..)
     , SelectQuery(..)
     , SelectQueryInternal(..)
@@ -67,6 +69,7 @@ import Control.Monad.Trans.Writer.Strict (Writer)
 import qualified Control.Monad.Trans.Writer.Strict as Writer (mapWriter,
                                                               runWriter, tell)
 import Data.DList (DList(..))
+import qualified Data.DList as DList (toList)
 import Data.Extensible (Member)
 import qualified Data.Extensible.HList as HList (HList(..), htraverse)
 import Data.Functor.Identity (Identity(..))
@@ -91,6 +94,9 @@ type SelectQueryM g = StateT (Int, Int) (Writer (SelectClauses g))
 newtype SelectQueryInternal (s :: SelectStage) (g :: * -> *) a = SelectQueryInternal
     { unSelectQueryInternal :: SelectQueryM g (FieldsSelector (Sel g) a)
     }
+
+data FieldClause g where
+    FieldClause :: SelWithAlias g a -> FieldClause g
 
 data From g a where
     FromEntity :: PersistEntity record => Int -> proxy (Entity record) -> From g (Entity record)
@@ -210,7 +216,7 @@ handleFromJoins (FromJoins p js) = do
     return (HList.HCons (return a) xs)
 
 data SelectClause (g :: * -> *) where
-    Fields :: FieldsSelector (SelWithAlias g) a -> SelectClause g
+    Fields :: [FieldClause g] -> SelectClause g
     From :: From g a -> SelectClause g
     Join :: From g a -> SelectClause g
     On :: RRef a -> g Bool -> SelectClause g
@@ -230,7 +236,7 @@ instance Hoist SelectQuery where
 instance Hoist (SelectQueryInternal s) where
     hoist f (SelectQueryInternal a) = SelectQueryInternal . fmap (hoist (hoist f)) . State.mapStateT h $ a
         where
-        h = Writer.mapWriter $ \(x, SelectClauses w) -> (x, SelectClauses (fmap (hoist' f) w))
+        h = Writer.mapWriter $ \(x, SelectClauses w) -> (x, SelectClauses (fmap (hoistSelectClause f) w))
 
 instance Hoist From where
     hoist _ (FromEntity i a)     = FromEntity i a
@@ -374,17 +380,17 @@ resultAsInternal
 resultAsInternal selector cont (SelectQueryInternal pre) = SelectQueryInternal $ do
     _ <- pre
     selectorWithAlias <- mkRef selector
-    lift . Writer.tell . SelectClauses . return $ Fields selectorWithAlias
-    let sel = hoist pickSel selectorWithAlias
-        ref = hoist aliasToRef selectorWithAlias
-    unSelectQueryInternal . cont ref . SelectQueryInternal . return $ sel
+    let !fs = DList.toList $ mkFieldClauses selectorWithAlias
+        !ref = hoist aliasToRef selectorWithAlias
+    lift . Writer.tell . SelectClauses . return . Fields $ fs
+    unSelectQueryInternal . cont ref . SelectQueryInternal . return $ selector
 
     where
     mkRef s = do
         (i, j) <- State.get
-        let (selectorWithAlias, next) = mkSelectorWithAlias j s
+        let (sel, next) = mkSelectorWithAlias j s
         State.put (i, next)
-        return selectorWithAlias
+        return sel
 
 where_ :: g Bool -> SelectQueryInternal s g a -> SelectQueryInternal s g a
 where_ a (SelectQueryInternal q) = SelectQueryInternal $ do
@@ -462,17 +468,20 @@ variance = mkAst . return . AggFunction "variance"
 count :: AggFunctionType g n a Int64
 count = mkAst . return . Count
 
-hoist' :: (forall x. m x -> n x) -> SelectClause m -> SelectClause n
-hoist' f (Fields a)    = Fields (hoist (hoist f) a)
-hoist' f (From a)      = From (hoist f a)
-hoist' f (Join a) = Join (hoist f a)
-hoist' f (On ref cond) = On ref (f cond)
-hoist' f (Where a)     = Where (f a)
-hoist' f (GroupBy fs)  = GroupBy . runIdentity . HList.htraverse (Identity . hoist f) $ fs
-hoist' f (OrderBy a t) = OrderBy (f a) t
-hoist' _ (Limit a)     = Limit a
-hoist' _ (Offset a)    = Offset a
-hoist' _ Initial       = Initial
+hoistSelectClause :: (forall x. m x -> n x) -> SelectClause m -> SelectClause n
+hoistSelectClause f (Fields a)    = Fields (map (hoistFieldClause f) a)
+hoistSelectClause f (From a)      = From (hoist f a)
+hoistSelectClause f (Join a) = Join (hoist f a)
+hoistSelectClause f (On ref cond) = On ref (f cond)
+hoistSelectClause f (Where a)     = Where (f a)
+hoistSelectClause f (GroupBy fs)  = GroupBy . runIdentity . HList.htraverse (Identity . hoist f) $ fs
+hoistSelectClause f (OrderBy a t) = OrderBy (f a) t
+hoistSelectClause _ (Limit a)     = Limit a
+hoistSelectClause _ (Offset a)    = Offset a
+hoistSelectClause _ Initial       = Initial
+
+hoistFieldClause :: (forall x. m x -> n x) -> FieldClause m -> FieldClause n
+hoistFieldClause f (FieldClause a) = FieldClause (hoist f a)
 
 mkSelectorWithAlias :: Int -> FieldsSelector (Sel g) a -> (FieldsSelector (SelWithAlias g) a, Int)
 mkSelectorWithAlias i Raw = (Raw, i)
@@ -487,6 +496,12 @@ mkSelectorWithAlias i (s :*: Star a) =
 mkSelectorWithAlias i (s :*: Sel a) =
     let (r, next) = mkSelectorWithAlias i s
     in (r :*: Sel' a (FieldAlias next), next + 1)
+
+mkFieldClauses :: FieldsSelector (SelWithAlias g) a -> DList (FieldClause g)
+mkFieldClauses Raw = mempty
+mkFieldClauses (Nullable a) = mkFieldClauses a
+mkFieldClauses (_ :$: a) = return . FieldClause $ a
+mkFieldClauses (s :*: a) = mkFieldClauses s `mappend` return (FieldClause a)
 
 qualifySelectorRef :: Int -> FieldsSelector Ref a -> FieldsSelector Ref a
 qualifySelectorRef _ Raw = Raw
@@ -526,10 +541,6 @@ convertFromProxy i (FPSubQuery a) =
 aliasToRef :: SelWithAlias g a -> Ref a
 aliasToRef (Star' a)               = RelationRef (RRef (relationAliasId a))
 aliasToRef (Sel' _ (FieldAlias i)) = FieldRef (FRef i)
-
-pickSel :: SelWithAlias g a -> Sel g a
-pickSel (Star' a)  = Star a
-pickSel (Sel' a _) = Sel a
 
 mkSelRefAlias:: From g a -> (FieldsSelector (Sel g) a, FieldsSelector Ref a, RelationAlias a)
 mkSelRefAlias (FromEntity i _) =
