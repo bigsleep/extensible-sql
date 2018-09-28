@@ -3,12 +3,14 @@
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE GADTs                #-}
 {-# LANGUAGE PatternSynonyms      #-}
+{-# LANGUAGE PolyKinds            #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE TypeOperators        #-}
 {-# LANGUAGE UndecidableInstances #-}
 module ExSql.Syntax.Internal
-    ( FieldsSelector(..)
+    ( FieldClause(..)
+    , FieldsSelector(..)
     , KnownConstructor(..)
     , PersistConvert
     , RRef(..)
@@ -32,6 +34,12 @@ import Database.Persist (Entity, PersistEntity(..), PersistField(..),
 import ExSql.Syntax.Class
 import ExSql.Syntax.Internal.Types
 
+class Hoist t => Selector (t :: (* -> *) -> k -> *) where
+    type SelectResultType t (a :: k) :: *
+    type SelectRefType t (a :: k) :: *
+    mkPersistConvert :: t (Sel g) a -> PersistConvert (SelectResultType t a)
+    mkRefAndFieldClauses :: t (Sel g) a -> (SelectRefType t a, [FieldClause g])
+
 data RelationAlias a where
     RelationAlias :: (PersistEntity a) => Int -> RelationAlias (Entity a)
     RelationAliasSub :: Int -> FieldsSelector (Sel g) a -> RelationAlias a
@@ -47,6 +55,9 @@ data Sel g a where
 data SelWithAlias g a where
     Star' :: RelationAlias a -> SelWithAlias g a
     Sel' :: (PersistField a) => g a -> FieldAlias a -> SelWithAlias g a
+
+data FieldClause g where
+    FieldClause :: SelWithAlias g a -> FieldClause g
 
 instance Hoist Sel where
     hoist _ (Star a) = Star a

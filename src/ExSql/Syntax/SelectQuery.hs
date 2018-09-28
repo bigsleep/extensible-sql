@@ -100,9 +100,6 @@ newtype SelectQueryInternal (s :: SelectStage) (g :: * -> *) a = SelectQueryInte
     { unSelectQueryInternal :: SelectQueryM g (FieldsSelector (Sel g) a)
     }
 
-data FieldClause g where
-    FieldClause :: SelWithAlias g a -> FieldClause g
-
 data From g a where
     FromEntity :: PersistEntity record => Int -> proxy (Entity record) -> From g (Entity record)
     FromSubQuery :: Int -> SelectQuery g a -> FieldsSelector (Sel g) a -> From g a
