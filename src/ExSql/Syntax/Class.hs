@@ -9,6 +9,7 @@
 module ExSql.Syntax.Class
     ( Ast(..)
     , Hoist(..)
+    , HTraversable(..)
     , Node(..)
     , Expr(..)
     , UnaryOpType
@@ -19,7 +20,8 @@ module ExSql.Syntax.Class
     ) where
 
 import Data.Extensible ((:|)(..), Member, embed)
-import Data.Extensible.HList (HList(..), htraverse)
+import Data.Extensible.HList (HList(..))
+import qualified Data.Extensible.HList as HList (htraverse)
 import Data.Functor.Identity (Identity(..))
 
 class Ast g where
@@ -30,8 +32,11 @@ class Ast g where
 class Hoist (t :: (* -> *) -> k -> *) where
     hoist :: (forall x. f x -> g x) -> t f a -> t g a
 
+class HTraversable (t :: (* -> *) -> k -> *) where
+    htraverse :: Applicative g => (forall x. f x -> g (h x)) -> t f a -> g (t h a)
+
 instance Hoist HList where
-    hoist f = runIdentity . htraverse (return . f)
+    hoist f = runIdentity . HList.htraverse (return . f)
 
 data Node m g a (f :: (* -> *) -> * -> *) where
     Node :: (Hoist f) => m (f g a) -> Node m g a f
