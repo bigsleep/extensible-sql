@@ -83,6 +83,7 @@ import Database.Persist (Entity(..), PersistEntity(..), PersistField(..),
                          PersistValue)
 import qualified Database.Persist.Sql.Util as Persist (entityColumnCount)
 import ExSql.Syntax.Class
+import ExSql.Syntax.Internal
 import ExSql.Syntax.Internal.Types
 import Prelude hiding (max, min)
 

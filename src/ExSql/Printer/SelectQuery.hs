@@ -44,6 +44,7 @@ import Safe.Exact (splitAtExactMay)
 
 import ExSql.Printer.Common
 import ExSql.Printer.Types
+import ExSql.Syntax.Internal
 import ExSql.Syntax.Internal.Types
 import ExSql.Syntax.Relativity (Associativity(..), Precedence(..),
                                 Relativity(..))
