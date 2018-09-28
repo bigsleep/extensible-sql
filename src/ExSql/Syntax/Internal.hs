@@ -81,6 +81,12 @@ instance Hoist FieldsSelector where
     hoist f (g :$: a)    = g :$: f a
     hoist f (s :*: a)    = hoist f s :*: f a
 
+instance HTraversable FieldsSelector where
+    htraverse _ Raw          = pure Raw
+    htraverse f (Nullable a) = Nullable <$> htraverse f a
+    htraverse f (g :$: a)    = (g :$:) <$> f a
+    htraverse f (s :*: a)    = (:*:) <$> htraverse f s <*> f a
+
 pattern Nil :: HList.HList h '[]
 pattern Nil = HList.HNil
 
