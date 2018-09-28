@@ -17,45 +17,51 @@ module ExSql.Syntax.SelectQuery
     ( Field(..)
     , FieldClause(..)
     , From(..)
+    , FromProxy(..)
     , SelectQuery(..)
     , SelectQueryInternal(..)
+    , SelectQueryM
     , FieldsSelector(..)
     , SelectClause(..)
     , SelectClauses(..)
     , OrderType(..)
     , (.^)
+    , afield
+    , aggResultAs
+    , avg
     , column
+    , convertFromProxy
+    , count
     , countFields
     , field
-    , fromId
-    , groupBy
-    , limit
-    , offset
-    , orderBy
-    , aggResultAs
-    , resultAs
-    , select_
-    , select
-    , selectAgg_
-    , selectAgg
-    , selectInternal
     , from
     , fromEntity
+    , fromId
     , fromSub
+    , groupBy
     , join
     , joinEntity
     , joinSub
-    , on
-    , where_
-    , afield
-    , avg
+    , limit
     , max
     , min
+    , mkSelRefAlias
+    , offset
+    , on
+    , orderBy
+    , prepareFrom
+    , resultAs
+    , select
+    , selectAgg
+    , selectAgg_
+    , selectInternal
+    , select_
     , stddev
+    , tellSelectClause
     , variance
-    , count
-    , AggregateFunction(..)
+    , where_
     , AFields
+    , AggregateFunction(..)
     , ARef(..)
     , ARefs
     ) where
@@ -77,8 +83,6 @@ import Data.Int (Int64)
 import Data.Proxy (Proxy(..))
 import Data.Semigroup (Semigroup(..))
 import Data.Text (Text)
-import Data.Type.Bool
-import Data.Type.Equality
 import Database.Persist (Entity(..), PersistEntity(..), PersistField(..),
                          PersistValue)
 import qualified Database.Persist.Sql.Util as Persist (entityColumnCount)
@@ -106,115 +110,6 @@ data From g a where
 data FromProxy g a where
     FPEntity :: PersistEntity record => proxy (Entity record) -> FromProxy g (Entity record)
     FPSubQuery :: SelectQuery g a -> FromProxy g a
-
-data JoinType =
-    InnerJoin |
-    CrossJoin |
-    LeftJoin |
-    RightJoin |
-    FullJoin
-    deriving (Show, Eq)
-
-newtype JoinProxy (t :: JoinType) g a =
-    JoinProxy (FromProxy g a)
-
-data Joins g (xs :: [*]) where
-    JNil :: Joins g '[]
-    JCons :: JoinProxy t g a -> Joins g xs -> Joins g (JoinProxy t g a ': xs)
-
-data FromJoins g a (xs :: [*]) where
-    FromJoins :: FromProxy g a -> Joins g xs -> FromJoins g a xs
-
-type family HandleNullableType (nullable :: Bool) x :: * where
-    HandleNullableType 'True (Maybe x) = Maybe x
-    HandleNullableType 'True x = Maybe x
-    HandleNullableType 'False x = x
-
-type family IsMaybe (a :: *) :: Bool where
-    IsMaybe (Maybe a) = 'True
-    IsMaybe a = 'False
-
-type family IsNotMaybe (a :: *) :: Bool where
-    IsNotMaybe a = Not (IsMaybe a)
-
-type family InList (x :: k) (xs :: [k]) :: Bool where
-    InList x (x ': _) = 'True
-    InList x (y ': xs) = InList x xs
-    InList x '[] = 'False
-
-class RightNullable (xs :: [*]) where
-    type RightNullableType xs :: Bool
-    rightNullable :: Joins g xs -> Proxy (RightNullableType xs)
-
-instance RightNullable '[] where
-    type RightNullableType '[] = 'False
-    rightNullable _ = Proxy
-
-instance (RightNullable xs) => RightNullable (JoinProxy x g a ': xs) where
-    type RightNullableType (JoinProxy x g a ': xs) = InList x ['RightJoin, 'FullJoin] || RightNullableType xs
-    rightNullable _ = Proxy
-
-class HandleFromProxy g (n :: Bool) a where
-    type HandleFromProxyType g n a :: *
-    handleFromProxy :: Proxy n -> FromProxy g a -> (From g a -> SelectClause g) -> SelectQueryM g (HandleFromProxyType g n a)
-
-instance HandleFromProxy g 'True a where
-    type HandleFromProxyType g 'True a = (FieldsSelector (Sel g) a, FieldsSelector Ref a, RelationAlias (Maybe a))
-    handleFromProxy _ proxy sc = do
-        i <- prepareFrom $ return ()
-        let from_ = convertFromProxy i proxy
-            (sel, sref, alias) = mkSelRefAlias from_
-            alias' = nullableAlias alias
-        tellSelectClause . sc $ from_
-        return (sel, sref, alias')
-
-        where
-        nullableAlias a @ (RelationAlias i) = RelationAliasSub i (Nullable $ id :$: Star a)
-        nullableAlias (RelationAliasSub i sel) = RelationAliasSub i (Nullable sel)
-
-instance HandleFromProxy g 'False a where
-    type HandleFromProxyType g 'False a = (FieldsSelector (Sel g) a, FieldsSelector Ref a, RelationAlias a)
-    handleFromProxy _ proxy sc = do
-        i <- prepareFrom $ return ()
-        let from_ = convertFromProxy i proxy
-        tellSelectClause . sc $ from_
-        return . mkSelRefAlias $ from_
-
-class HandleJoins (n :: Bool) (xs :: [*]) where
-    type NeedConvert n xs :: Bool
-    type HandleJoinsType n xs :: [*]
-    type LeftNullableType n xs :: Bool
-    needConvert :: Proxy n -> Joins g xs -> Proxy (NeedConvert n xs)
-    leftNullable :: Proxy n -> Joins g xs -> Proxy (LeftNullableType n xs)
-    handleJoins :: Proxy n -> Joins g xs -> SelectQueryM g (HList.HList Identity (HandleJoinsType n xs))
-
-instance HandleJoins n '[] where
-    type NeedConvert n '[] = 'False
-    type HandleJoinsType n '[] = '[]
-    type LeftNullableType n '[] = n
-    needConvert _ _ = Proxy
-    handleJoins _ _ = return HList.HNil
-
-instance
-    ( HandleJoins (n || InList x ['LeftJoin, 'FullJoin]) xs
-    , RightNullable xs
-    , HandleFromProxy g ((n || x == 'FullJoin || RightNullableType xs) && IsNotMaybe a) a
-    ) => HandleJoins n (JoinProxy x g a ': xs) where
-    type NeedConvert n (JoinProxy x g a ': xs) = (n || x == 'FullJoin || RightNullableType xs) && IsNotMaybe a
-    type HandleJoinsType n (JoinProxy x g a ': xs) = HandleFromProxyType g ((n || x == 'FullJoin || RightNullableType xs) && IsNotMaybe a) a ': HandleJoinsType (n || InList x ['LeftJoin, 'FullJoin]) xs
-    type LeftNullableType n (JoinProxy x g a ': xs) = n || InList x ['LeftJoin, 'FullJoin]
-    needConvert _ _ = Proxy
-    handleJoins n js @ (JCons (JoinProxy p) xs) = do
-        let n' = needConvert n js
-        a <- handleFromProxy n' p Join
-        xs <- handleJoins (leftNullable n js) xs
-        return (HList.HCons (return a) xs)
-
-handleFromJoins :: (RightNullable xs, HandleFromProxy g (RightNullableType xs) a, HandleJoins 'False xs) => FromJoins g a xs -> SelectQueryM g (HList.HList Identity (HandleFromProxyType g ('False || RightNullableType xs) a ': HandleJoinsType 'False xs))
-handleFromJoins (FromJoins p js) = do
-    a <- handleFromProxy (rightNullable js) p From
-    xs <- handleJoins (Proxy :: Proxy 'False) js
-    return (HList.HCons (return a) xs)
 
 data SelectClause (g :: * -> *) where
     Fields :: [FieldClause g] -> SelectClause g

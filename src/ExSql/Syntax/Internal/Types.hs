@@ -4,6 +4,7 @@ module ExSql.Syntax.Internal.Types
     , ConvertResult(..)
     , FRef(..)
     , FieldAlias(..)
+    , JoinType(..)
     , PersistConvert
     , RRef(..)
     , Ref(..)
@@ -15,9 +16,7 @@ module ExSql.Syntax.Internal.Types
 import Control.Monad.Trans.State.Strict (StateT)
 import qualified Data.Extensible.HList as HList (HList(..))
 import Data.Text (Text)
-import Database.Persist (Entity, PersistEntity(..), PersistField(..),
-                         PersistValue(..))
-import ExSql.Syntax.Class
+import qualified Database.Persist as Persist (PersistField, PersistValue)
 
 data SelectStage =
     Neutral |
@@ -41,7 +40,7 @@ data FRef a = FRef Int | QRef Int Int
 
 data Ref a where
     RelationRef :: RRef a -> Ref a
-    FieldRef :: (PersistField a) => FRef a -> Ref a
+    FieldRef :: (Persist.PersistField a) => FRef a -> Ref a
 
 data ValueList a
 
@@ -50,4 +49,12 @@ data ConvertResult =
     ConvertError Text
     deriving (Show, Eq)
 
-type PersistConvert a = StateT [PersistValue] (Either ConvertResult) a
+type PersistConvert a = StateT [Persist.PersistValue] (Either ConvertResult) a
+
+data JoinType =
+    InnerJoin |
+    CrossJoin |
+    LeftJoin |
+    RightJoin |
+    FullJoin
+    deriving (Show, Eq)
