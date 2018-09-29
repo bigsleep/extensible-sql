@@ -1,31 +1,31 @@
-{-# LANGUAGE BangPatterns               #-}
-{-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE GADTs                      #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE KindSignatures             #-}
-{-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE PatternSynonyms            #-}
-{-# LANGUAGE PolyKinds                  #-}
-{-# LANGUAGE RankNTypes                 #-}
-{-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE TypeOperators              #-}
-{-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE BangPatterns          #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE PatternSynonyms       #-}
+{-# LANGUAGE PolyKinds             #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE UndecidableInstances  #-}
 module ExSql.Syntax.SelectQuery
-    ( Field(..)
+    ( (.^)
+    , AFields
+    , ARef(..)
+    , ARefs
+    , AggregateFunction(..)
+    , Field(..)
     , FieldClause(..)
+    , FieldsSelector(..)
     , From(..)
     , FromProxy(..)
+    , OrderType(..)
     , SelectQuery(..)
     , SelectQueryInternal(..)
     , SelectQueryM
-    , FieldsSelector(..)
-    , SelectClause(..)
-    , SelectClauses(..)
-    , OrderType(..)
-    , (.^)
     , afield
     , aggResultAs
     , avg
@@ -57,102 +57,28 @@ module ExSql.Syntax.SelectQuery
     , selectInternal
     , select_
     , stddev
+    , sum
     , tellSelectClause
     , variance
     , where_
-    , AFields
-    , AggregateFunction(..)
-    , ARef(..)
-    , ARefs
     ) where
 
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Reader (ReaderT, runReaderT)
-import Control.Monad.Trans.State.Strict (StateT)
-import qualified Control.Monad.Trans.State.Strict as State (evalStateT, get,
-                                                            mapStateT, put)
-import Control.Monad.Trans.Writer.Strict (Writer)
-import qualified Control.Monad.Trans.Writer.Strict as Writer (mapWriter,
-                                                              runWriter, tell)
-import Data.DList (DList(..))
-import qualified Data.DList as DList (toList)
+import qualified Control.Monad.Trans.State.Strict as State (get, put)
+import qualified Control.Monad.Trans.Writer.Strict as Writer (tell)
 import Data.Extensible (Member)
 import qualified Data.Extensible.HList as HList (HList(..), htraverse)
 import Data.Functor.Identity (Identity(..))
 import Data.Int (Int64)
 import Data.Proxy (Proxy(..))
-import Data.Semigroup (Semigroup(..))
 import Data.Text (Text)
 import Database.Persist (Entity(..), PersistEntity(..), PersistField(..),
                          PersistValue)
-import qualified Database.Persist.Sql.Util as Persist (entityColumnCount)
 import ExSql.Syntax.Class
 import ExSql.Syntax.Internal
 import ExSql.Syntax.Internal.Types
-import Prelude hiding (max, min)
-
-data SelectQuery g a where
-    SelectQuery :: SelectQueryInternal s g a -> SelectQuery g a
-
-type SelectQueryM g = StateT (Int, Int) (Writer (SelectClauses g))
-
-newtype SelectQueryInternal (s :: SelectStage) (g :: * -> *) a = SelectQueryInternal
-    { unSelectQueryInternal :: SelectQueryM g (FieldsSelector (Sel g) a)
-    }
-
-data From g a where
-    FromEntity :: PersistEntity record => Int -> proxy (Entity record) -> From g (Entity record)
-    FromSubQuery :: Int -> SelectQuery g a -> FieldsSelector (Sel g) a -> From g a
-
-data FromProxy g a where
-    FPEntity :: PersistEntity record => proxy (Entity record) -> FromProxy g (Entity record)
-    FPSubQuery :: SelectQuery g a -> FromProxy g a
-
-data SelectClause (g :: * -> *) where
-    Fields :: [FieldClause g] -> SelectClause g
-    From :: From g a -> SelectClause g
-    Join :: From g a -> SelectClause g
-    On :: RRef a -> g Bool -> SelectClause g
-    Where :: g Bool -> SelectClause g
-    GroupBy :: AFields g xs -> SelectClause g
-    OrderBy :: g b -> OrderType -> SelectClause g
-    Limit :: Int64 -> SelectClause g
-    Offset :: Int64 -> SelectClause g
-    Initial :: SelectClause g
-
-newtype SelectClauses g = SelectClauses (DList (SelectClause g))
-    deriving (Semigroup, Monoid)
-
-instance Hoist SelectQuery where
-    hoist f (SelectQuery a) = SelectQuery (hoist f a)
-
-instance Hoist (SelectQueryInternal s) where
-    hoist f (SelectQueryInternal a) = SelectQueryInternal . fmap (hoist (hoist f)) . State.mapStateT h $ a
-        where
-        h = Writer.mapWriter $ \(x, SelectClauses w) -> (x, SelectClauses (fmap (hoistSelectClause f) w))
-
-instance Hoist From where
-    hoist _ (FromEntity i a)     = FromEntity i a
-    hoist f (FromSubQuery i a s) = FromSubQuery i (hoist f a) (hoist (hoist f) s)
-
-fromId :: From g a -> Int
-fromId (FromEntity i _)     = i
-fromId (FromSubQuery i _ _) = i
-
-data OrderType = Asc | Desc deriving (Show, Eq)
-
-data Field (g :: * -> *) a where
-    Field :: (PersistField a) => Ref a -> Field g a
-    Column :: (PersistEntity record) => RRef (Entity record) -> EntityField record a -> Field g a
-
-instance Hoist Field where
-    hoist _ (Field a)    = Field a
-    hoist _ (Column t a) = Column t a
-
-newtype ARef g a = ARef (Field g a)
-
-instance Hoist ARef where
-    hoist f (ARef a) = ARef (hoist f a)
+import Prelude hiding (max, min, sum)
 
 data AggregateFunction g a where
     AggFunction :: Text -> g a -> AggregateFunction g a
@@ -164,30 +90,28 @@ instance Hoist AggregateFunction where
     hoist f (AggField ref)       = AggField (hoist f ref)
     hoist f (Count e)            = Count (f e)
 
-type AFields g xs = HList.HList (Field g) xs
-
 type ARefs g xs = HList.HList (ARef g) xs
 
-select_ :: (SelectQueryInternal 'Neutral g [PersistValue] -> SelectQueryInternal 'Neutral g a) -> SelectQuery g a
+select_ :: Selectable t => (SelectQueryInternal 'Neutral FieldsSelector g [PersistValue] -> SelectQueryInternal 'Neutral t g a) -> SelectQuery t g a
 select_ = SelectQuery . selectInternal
 
-select :: (SelectQueryInternal 'Neutral g [PersistValue] -> SelectQueryInternal 'FieldsSpecified g a) -> SelectQuery g a
+select :: Selectable t => (SelectQueryInternal 'Neutral FieldsSelector g [PersistValue] -> SelectQueryInternal 'FieldsSpecified t g a) -> SelectQuery t g a
 select = SelectQuery . selectInternal
 
-selectAgg_ :: (SelectQueryInternal 'Neutral g [PersistValue] -> SelectQueryInternal 'Aggregated g a) -> SelectQuery g a
+selectAgg_ :: Selectable t => (SelectQueryInternal 'Neutral FieldsSelector g [PersistValue] -> SelectQueryInternal 'Aggregated t g a) -> SelectQuery t g a
 selectAgg_ = SelectQuery . selectInternal
 
-selectAgg :: (SelectQueryInternal 'Neutral g [PersistValue] -> SelectQueryInternal 'AggFieldsSpecified g a) -> SelectQuery g a
+selectAgg :: Selectable t => (SelectQueryInternal 'Neutral FieldsSelector g [PersistValue] -> SelectQueryInternal 'AggFieldsSpecified t g a) -> SelectQuery t g a
 selectAgg = SelectQuery . selectInternal
 
-selectInternal :: (SelectQueryInternal s0 g [PersistValue] -> SelectQueryInternal s1 g a) -> SelectQueryInternal s1 g a
+selectInternal :: (SelectQueryInternal s0 FieldsSelector g [PersistValue] -> SelectQueryInternal s1 t g a) -> SelectQueryInternal s1 t g a
 selectInternal f = f . SelectQueryInternal . return $ Raw
 
 from
-    :: FromProxy g b
-    -> (FieldsSelector Ref b -> RRef b -> RelationAlias b -> SelectQueryInternal 'Neutral g b -> SelectQueryInternal s1 g a)
-    -> SelectQueryInternal 'Neutral g x
-    -> SelectQueryInternal s1 g a
+    :: FromProxy FieldsSelector g b
+    -> (FieldsSelector Ref b -> RRef b -> RelationAlias b -> SelectQueryInternal 'Neutral FieldsSelector g b -> SelectQueryInternal s1 t1 g a)
+    -> SelectQueryInternal 'Neutral t0 g x
+    -> SelectQueryInternal s1 t1 g a
 from proxy f (SelectQueryInternal pre) = SelectQueryInternal $ do
     i <- prepareFrom pre
     let from_ = convertFromProxy i proxy
@@ -198,25 +122,25 @@ from proxy f (SelectQueryInternal pre) = SelectQueryInternal $ do
 
 fromEntity
     :: (PersistEntity record)
-    => (RRef (Entity record) -> RelationAlias (Entity record) -> SelectQueryInternal 'Neutral g (Entity record) -> SelectQueryInternal s1 g a)
-    -> SelectQueryInternal 'Neutral g x
-    -> SelectQueryInternal s1 g a
+    => (RRef (Entity record) -> RelationAlias (Entity record) -> SelectQueryInternal 'Neutral FieldsSelector g (Entity record) -> SelectQueryInternal s1 t1 g a)
+    -> SelectQueryInternal 'Neutral t0 g x
+    -> SelectQueryInternal s1 t1 g a
 fromEntity f = from (FPEntity Proxy) (const f)
 
 fromSub
-    :: SelectQuery g b
-    -> (FieldsSelector Ref b -> RelationAlias b -> SelectQueryInternal 'Neutral g b -> SelectQueryInternal s1 g a)
-    -> SelectQueryInternal 'Neutral g x
-    -> SelectQueryInternal s1 g a
+    :: SelectQuery FieldsSelector g b
+    -> (FieldsSelector Ref b -> RelationAlias b -> SelectQueryInternal 'Neutral FieldsSelector g b -> SelectQueryInternal s1 t1 g a)
+    -> SelectQueryInternal 'Neutral t0 g x
+    -> SelectQueryInternal s1 t1 g a
 fromSub q f = from (FPSubQuery q) g
     where
     g a r = f (qualifySelectorRef (rrefId r) a)
 
 join
-    :: FromProxy g b
-    -> (FieldsSelector Ref b -> RRef b -> RelationAlias b -> SelectQueryInternal 'Neutral g b -> SelectQueryInternal s1 g a)
-    -> SelectQueryInternal 'Neutral g x
-    -> SelectQueryInternal s1 g a
+    :: FromProxy FieldsSelector g b
+    -> (FieldsSelector Ref b -> RRef b -> RelationAlias b -> SelectQueryInternal 'Neutral FieldsSelector g b -> SelectQueryInternal s1 t1 g a)
+    -> SelectQueryInternal 'Neutral t0 g x
+    -> SelectQueryInternal s1 t1 g a
 join proxy f (SelectQueryInternal pre) = SelectQueryInternal $ do
     i <- prepareFrom pre
     let from_ = convertFromProxy i proxy
@@ -227,65 +151,57 @@ join proxy f (SelectQueryInternal pre) = SelectQueryInternal $ do
 
 joinEntity
     :: (PersistEntity record)
-    => (RRef (Entity record) -> RelationAlias (Entity record) -> SelectQueryInternal 'Neutral g (Entity record) -> SelectQueryInternal s1 g a)
-    -> SelectQueryInternal 'Neutral g x
-    -> SelectQueryInternal s1 g a
+    => (RRef (Entity record) -> RelationAlias (Entity record) -> SelectQueryInternal 'Neutral FieldsSelector g (Entity record) -> SelectQueryInternal s1 t1 g a)
+    -> SelectQueryInternal 'Neutral t0 g x
+    -> SelectQueryInternal s1 t1 g a
 joinEntity f = join (FPEntity Proxy) (const f)
 
 joinSub
-    :: SelectQuery g b
-    -> (FieldsSelector Ref b -> RelationAlias b -> SelectQueryInternal 'Neutral g b -> SelectQueryInternal s1 g a)
-    -> SelectQueryInternal 'Neutral g x
-    -> SelectQueryInternal s1 g a
+    :: SelectQuery FieldsSelector g b
+    -> (FieldsSelector Ref b -> RelationAlias b -> SelectQueryInternal 'Neutral FieldsSelector g b -> SelectQueryInternal s1 t1 g a)
+    -> SelectQueryInternal 'Neutral t0 g x
+    -> SelectQueryInternal s1 t1 g a
 joinSub q f = join (FPSubQuery q) g
     where
     g a r = f (qualifySelectorRef (rrefId r) a)
 
-on :: RRef b -> g Bool -> SelectQueryInternal s g a -> SelectQueryInternal s g a
+on :: RRef b -> g Bool -> SelectQueryInternal s t g a -> SelectQueryInternal s t g a
 on ref cond (SelectQueryInternal q) = SelectQueryInternal $ do
     r <- q
     lift . Writer.tell . SelectClauses . return $ On ref cond
     return r
 
 resultAs
-    :: (Ast g, expr ~ g Identity)
-    => FieldsSelector (Sel expr) a1
-    -> (FieldsSelector Ref a1 -> SelectQueryInternal 'FieldsSpecified expr a1 -> SelectQueryInternal 'FieldsSpecified expr a2)
-    -> SelectQueryInternal 'Neutral expr a0
-    -> SelectQueryInternal 'FieldsSpecified expr a2
+    :: (Selectable t, Ast g, expr ~ g Identity)
+    => t (Sel expr) a1
+    -> (SelectRefType t a1 -> SelectQueryInternal 'FieldsSpecified t expr a1 -> SelectQueryInternal 'FieldsSpecified t expr a2)
+    -> SelectQueryInternal 'Neutral t0 expr a0
+    -> SelectQueryInternal 'FieldsSpecified t expr a2
 resultAs = resultAsInternal
 
 aggResultAs
-    :: (Ast g, expr0 ~ g (ReaderT AggregatedE Identity), expr1 ~ g Identity)
-    => FieldsSelector (Sel expr0) a1
-    -> (FieldsSelector Ref a1 -> SelectQueryInternal 'AggFieldsSpecified expr1 a1 -> SelectQueryInternal 'AggFieldsSpecified expr1 a2)
-    -> SelectQueryInternal 'Aggregated expr1 a0
-    -> SelectQueryInternal 'AggFieldsSpecified expr1 a2
+    :: (Selectable t, Ast g, expr0 ~ g (ReaderT AggregatedE Identity), expr1 ~ g Identity)
+    => t (Sel expr0) a1
+    -> (SelectRefType t a1 -> SelectQueryInternal 'AggFieldsSpecified t expr1 a1 -> SelectQueryInternal 'AggFieldsSpecified t expr1 a2)
+    -> SelectQueryInternal 'Aggregated t0 expr1 a0
+    -> SelectQueryInternal 'AggFieldsSpecified t expr1 a2
 aggResultAs selector = resultAsInternal selector'
     where
     selector' = hoist (hoist (hoistAst (`runReaderT` AggregatedE))) selector
 
 resultAsInternal
-    :: FieldsSelector (Sel g) a1
-    -> (FieldsSelector Ref a1 -> SelectQueryInternal stage1 g a1 -> SelectQueryInternal stage1 g a2)
-    -> SelectQueryInternal stage0 g a0
-    -> SelectQueryInternal stage1 g a2
+    :: Selectable t
+    => t (Sel g) a1
+    -> (SelectRefType t a1 -> SelectQueryInternal stage1 t g a1 -> SelectQueryInternal stage1 t g a2)
+    -> SelectQueryInternal stage0 t0 g a0
+    -> SelectQueryInternal stage1 t g a2
 resultAsInternal selector cont (SelectQueryInternal pre) = SelectQueryInternal $ do
     _ <- pre
-    selectorWithAlias <- mkRef selector
-    let !fs = DList.toList $ mkFieldClauses selectorWithAlias
-        !ref = hoist aliasToRef selectorWithAlias
+    let (!ref, !fs) = mkRefAndFieldClauses selector
     lift . Writer.tell . SelectClauses . return . Fields $ fs
     unSelectQueryInternal . cont ref . SelectQueryInternal . return $ selector
 
-    where
-    mkRef s = do
-        (i, j) <- State.get
-        let (sel, next) = mkSelectorWithAlias j s
-        State.put (i, next)
-        return sel
-
-where_ :: g Bool -> SelectQueryInternal s g a -> SelectQueryInternal s g a
+where_ :: g Bool -> SelectQueryInternal s t g a -> SelectQueryInternal s t g a
 where_ a (SelectQueryInternal q) = SelectQueryInternal $ do
     r <- q
     lift . Writer.tell . SelectClauses . return $ Where a
@@ -294,28 +210,28 @@ where_ a (SelectQueryInternal q) = SelectQueryInternal $ do
 groupBy
     :: (Ast g, Functor m, Member (NodeTypes g) AggregateFunction)
     => AFields (g m) xs
-    -> (ARefs (g m) xs -> SelectQueryInternal 'Aggregated (g m) [PersistValue] -> SelectQueryInternal s (g m) a1)
-    -> SelectQueryInternal 'Neutral (g m) a0
-    -> SelectQueryInternal s (g m) a1
+    -> (ARefs (g m) xs -> SelectQueryInternal 'Aggregated FieldsSelector (g m) [PersistValue] -> SelectQueryInternal s t (g m) a1)
+    -> SelectQueryInternal 'Neutral t (g m) a0
+    -> SelectQueryInternal s t (g m) a1
 groupBy fields cont pre = SelectQueryInternal $ do
     _ <- unSelectQueryInternal pre
     let ref = afieldsToARefs fields
     lift . Writer.tell . SelectClauses . return $ GroupBy fields
     unSelectQueryInternal . cont ref . SelectQueryInternal . return $ Raw
 
-orderBy :: g b -> OrderType -> SelectQueryInternal s g a -> SelectQueryInternal s g a
+orderBy :: g b -> OrderType -> SelectQueryInternal s t g a -> SelectQueryInternal s t g a
 orderBy a t (SelectQueryInternal q) = SelectQueryInternal $ do
     r <- q
     lift . Writer.tell . SelectClauses . return $ OrderBy a t
     return r
 
-limit :: Int64 -> SelectQueryInternal s g a -> SelectQueryInternal s g a
+limit :: Int64 -> SelectQueryInternal s t g a -> SelectQueryInternal s t g a
 limit a (SelectQueryInternal q) = SelectQueryInternal $ do
     r <- q
     lift . Writer.tell . SelectClauses . return . Limit $ a
     return r
 
-offset :: Int64 -> SelectQueryInternal s g a -> SelectQueryInternal s g a
+offset :: Int64 -> SelectQueryInternal s t g a -> SelectQueryInternal s t g a
 offset a (SelectQueryInternal q) = SelectQueryInternal $ do
     r <- q
     lift . Writer.tell . SelectClauses . return . Offset $ a
@@ -361,41 +277,6 @@ variance = mkAst . return . AggFunction "variance"
 count :: AggFunctionType g n a Int64
 count = mkAst . return . Count
 
-hoistSelectClause :: (forall x. m x -> n x) -> SelectClause m -> SelectClause n
-hoistSelectClause f (Fields a)    = Fields (map (hoistFieldClause f) a)
-hoistSelectClause f (From a)      = From (hoist f a)
-hoistSelectClause f (Join a) = Join (hoist f a)
-hoistSelectClause f (On ref cond) = On ref (f cond)
-hoistSelectClause f (Where a)     = Where (f a)
-hoistSelectClause f (GroupBy fs)  = GroupBy . runIdentity . HList.htraverse (Identity . hoist f) $ fs
-hoistSelectClause f (OrderBy a t) = OrderBy (f a) t
-hoistSelectClause _ (Limit a)     = Limit a
-hoistSelectClause _ (Offset a)    = Offset a
-hoistSelectClause _ Initial       = Initial
-
-hoistFieldClause :: (forall x. m x -> n x) -> FieldClause m -> FieldClause n
-hoistFieldClause f (FieldClause a) = FieldClause (hoist f a)
-
-mkSelectorWithAlias :: Int -> FieldsSelector (Sel g) a -> (FieldsSelector (SelWithAlias g) a, Int)
-mkSelectorWithAlias i Raw = (Raw, i)
-mkSelectorWithAlias i (Nullable a) =
-    let (x, y) = mkSelectorWithAlias i a
-    in (Nullable x, y)
-mkSelectorWithAlias i (f :$: Star a) = (f :$: Star' a, i)
-mkSelectorWithAlias i (f :$: Sel a) = (f :$: Sel' a (FieldAlias i), i + 1)
-mkSelectorWithAlias i (s :*: Star a) =
-    let (r, next) = mkSelectorWithAlias i s
-    in (r :*: Star' a, next)
-mkSelectorWithAlias i (s :*: Sel a) =
-    let (r, next) = mkSelectorWithAlias i s
-    in (r :*: Sel' a (FieldAlias next), next + 1)
-
-mkFieldClauses :: FieldsSelector (SelWithAlias g) a -> DList (FieldClause g)
-mkFieldClauses Raw = mempty
-mkFieldClauses (Nullable a) = mkFieldClauses a
-mkFieldClauses (_ :$: a) = return . FieldClause $ a
-mkFieldClauses (s :*: a) = mkFieldClauses s `mappend` return (FieldClause a)
-
 qualifySelectorRef :: Int -> FieldsSelector Ref a -> FieldsSelector Ref a
 qualifySelectorRef _ Raw = Raw
 qualifySelectorRef tid (Nullable a) = Nullable $ qualifySelectorRef tid a
@@ -419,50 +300,17 @@ prepareFrom pre = do
     State.put (i + 1, j)
     return i
 
-evalSubQuerySel :: SelectQuery g a -> FieldsSelector (Sel g) a
-evalSubQuerySel (SelectQuery a) =
-    fst . Writer.runWriter . flip State.evalStateT (0, 0) . unSelectQueryInternal $ a
-
 tellSelectClause :: SelectClause g -> SelectQueryM g ()
 tellSelectClause = lift . Writer.tell . SelectClauses . return
 
-convertFromProxy :: Int -> FromProxy g a -> From g a
+convertFromProxy :: Int -> FromProxy t g a -> From t g a
 convertFromProxy i (FPEntity a)   = FromEntity i a
 convertFromProxy i (FPSubQuery a) =
-    FromSubQuery i a (evalSubQuerySel a)
+    FromSubQuery i a
 
-aliasToRef :: SelWithAlias g a -> Ref a
-aliasToRef (Star' a)               = RelationRef (RRef (relationAliasId a))
-aliasToRef (Sel' _ (FieldAlias i)) = FieldRef (FRef i)
-
-mkSelRefAlias:: From g a -> (FieldsSelector (Sel g) a, FieldsSelector Ref a, RelationAlias a)
-mkSelRefAlias (FromEntity i _) =
-    let rref = RRef i
-        ref = RelationRef rref
-        sref = id :$: ref
-        alias = RelationAlias i
-        sel = id :$: Star alias
-    in (sel, sref, alias)
-mkSelRefAlias (FromSubQuery i _ sel) =
-    let alias = RelationAliasSub i sel
-        (selWithAlias, _) = mkSelectorWithAlias 0 sel
-        sref = hoist aliasToRef selWithAlias
-    in (sel, sref, alias)
-
-countFields :: Int -> FieldsSelector (Sel g) a -> Int
-countFields i Raw = i
-countFields i (Nullable a) = countFields i a
-countFields i (_ :$: Star alias) = countRelationFields i alias
-countFields _ (_ :$: Sel {}) = 1
-countFields i (a :*: Star alias) = countFields i a + countRelationFields i alias
-countFields i (a :*: Sel {}) = countFields i a + 1
-
-countRelationFields :: Int -> RelationAlias a -> Int
-countRelationFields _ a @ RelationAlias {} = colCount
-    where
-    def = entityDef . fmap entityVal . toProxy $ a
-    colCount = Persist.entityColumnCount def
-countRelationFields i (RelationAliasSub _ sel) = countFields i sel
-
-toProxy :: f a -> Proxy a
-toProxy _ = Proxy
+mkSelRefAlias:: (Selectable t) => From t g a -> (t (Sel g) a, SelectRefType t a, RelationAlias (SelectResultType t a))
+mkSelRefAlias a =
+    let sel = mkRelationSel a
+        (ref, _) = mkRefAndFieldClauses sel
+        alias = mkRelationAlias a
+    in (sel, ref, alias)

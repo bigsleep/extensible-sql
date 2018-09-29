@@ -54,7 +54,7 @@ printers p
 pp :: Maybe Relativity -> Maybe Relativity -> Expr Nodes Identity a -> StatementBuilder
 pp = printExpr (printers pp)
 
-s1 :: SelectQuery E (Entity Person)
+s1 :: SelectQuery FieldsSelector E (Entity Person)
 s1 = select_ . fromEntity $ \_ _ -> where_ e1
 
 main :: IO ()

@@ -1,6 +1,7 @@
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 module ExSql.Printer.SelectQuery
@@ -17,9 +18,7 @@ module ExSql.Printer.SelectQuery
     ) where
 
 import Control.Monad (MonadPlus(..))
-import Control.Monad.Trans.Class (lift)
-import qualified Control.Monad.Trans.State.Strict as State (evalStateT, get,
-                                                            mapStateT, put)
+import qualified Control.Monad.Trans.State.Strict as State (evalStateT)
 import qualified Control.Monad.Trans.Writer.Strict as Writer (runWriter)
 import Data.DList (DList)
 import qualified Data.DList as DList
@@ -28,30 +27,24 @@ import qualified Data.Extensible.HList as HList (hfoldrWithIndex)
 import Data.Int (Int64)
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
-import Data.List (intersperse, uncons)
-import Data.Maybe (maybe)
+import Data.List (intersperse)
 import Data.Proxy (Proxy(..))
 import Data.Semigroup (Semigroup(..))
 import qualified Data.Text.Lazy.Builder as TLB
 import qualified Data.Text.Lazy.Builder.Int as TLB
 import qualified Database.Persist as Persist (DBName(..), Entity(..),
-                                              EntityDef(..), PersistEntity(..),
-                                              PersistField(..))
+                                              EntityDef(..), PersistEntity(..))
 import qualified Database.Persist.Sql as Persist (fieldDBName)
-import qualified Database.Persist.Sql.Util as Persist (entityColumnCount,
-                                                       parseEntityValues)
-import Safe.Exact (splitAtExactMay)
 
 import ExSql.Printer.Common
 import ExSql.Printer.Types
-import ExSql.Syntax.Internal
+import qualified ExSql.Syntax.Internal as Syntax
 import ExSql.Syntax.Internal.Types
 import ExSql.Syntax.Relativity (Associativity(..), Precedence(..),
                                 Relativity(..))
 import ExSql.Syntax.SelectQuery (ARef(..), AggregateFunction(..), Field(..),
-                                 FieldsSelector(..), From(..), OrderType(..),
-                                 SelectQuery(..), SelectQueryInternal(..))
-import qualified ExSql.Syntax.SelectQuery as Syntax
+                                 From(..), OrderType(..), SelectQuery(..),
+                                 SelectQueryInternal(..))
 
 newtype Clause = Clause (DList StatementBuilder)
     deriving (Show, Semigroup, Monoid, Eq)
@@ -87,7 +80,7 @@ instance Monoid SelectClauses where
     mempty = SelectClauses mempty mempty mempty mempty mempty mempty mempty (LimitClause Nothing Nothing)
     mappend = (<>)
 
-printSelect :: ExprPrinterType g -> SelectQuery g a -> StatementBuilder
+printSelect :: ExprPrinterType g -> SelectQuery t g a -> StatementBuilder
 printSelect p query =
     let (_, sc) = renderSelect p query
     in printSelectClauses sc
@@ -190,11 +183,11 @@ printLimitClause (LimitClause (Just offset) Nothing) = StatementBuilder (TLB.fro
 printLimitClause (LimitClause Nothing (Just limit)) = StatementBuilder (TLB.fromText " LIMIT " <> TLB.decimal limit, mempty)
 printLimitClause (LimitClause (Just offset) (Just limit)) = StatementBuilder (TLB.fromText " OFFSET " <> TLB.decimal offset <> TLB.fromText " LIMIT " <> TLB.decimal limit, mempty)
 
-renderSelect :: ExprPrinterType g -> SelectQuery g a -> (PersistConvert a, SelectClauses)
+renderSelect :: ExprPrinterType g -> SelectQuery t g a -> (PersistConvert (Syntax.SelectResultType t a), SelectClauses)
 renderSelect p (SelectQuery query) = (convert, clauses)
     where
     (sref, Syntax.SelectClauses sclauses) = Writer.runWriter . flip State.evalStateT (0, 0) . unSelectQueryInternal $ query
-    convert = mkPersistConvert sref
+    convert = Syntax.mkPersistConvert sref
     clauses = foldMap (renderSelectClause p) sclauses
 
 renderSelectClause :: ExprPrinterType g -> Syntax.SelectClause g -> SelectClauses
@@ -209,70 +202,26 @@ renderSelectClause _ (Syntax.Limit limit) = mempty { scLimit = LimitClause Nothi
 renderSelectClause _ (Syntax.Offset offset) = mempty { scLimit = LimitClause (Just offset) Nothing }
 renderSelectClause _ Syntax.Initial = mempty
 
-mapLeft :: (a -> b) -> Either a c -> Either b c
-mapLeft f (Left a)  = Left (f a)
-mapLeft _ (Right c) = Right c
-
 toProxy :: f a -> Proxy a
 toProxy _ = Proxy
 
-mkPersistConvert :: FieldsSelector (Sel g) a -> PersistConvert a
-mkPersistConvert Raw =  do
-    xs <- State.get
-    State.put mempty
-    return xs
-mkPersistConvert (Nullable a) = do
-    xs <- State.get
-    let l = length xs
-        c = Syntax.countFields l a
-    State.mapStateT (handleNullable xs c) (mkPersistConvert a)
-    where
-    handleNullable _ _ (Right (x, s)) = Right (Just x, s)
-    handleNullable vs c (Left HitNullValue) = do
-        (_, rest) <- maybe (Left . ConvertError $ "not enough input values") return (splitAtExactMay c vs)
-        return (Nothing, rest)
-    handleNullable _ _ (Left (ConvertError e)) = Left (ConvertError e)
-mkPersistConvert (f :$: Star a @ RelationAlias {}) = f <$> mkPersistConvertEntity a
-mkPersistConvert (f :$: Star (RelationAliasSub _ s)) = f <$> mkPersistConvert s
-mkPersistConvert (f :$: Sel {}) = mkPersistConvertInternal f
-mkPersistConvert (s :*: Star a @ RelationAlias {}) = mkPersistConvert s <*> mkPersistConvertEntity a
-mkPersistConvert (s0 :*: Star (RelationAliasSub _ s1)) = mkPersistConvert s0 <*> mkPersistConvert s1
-mkPersistConvert (s :*: Sel {}) = mkPersistConvert s >>= mkPersistConvertInternal
-
-mkPersistConvertEntity :: (Persist.PersistEntity a) => RelationAlias (Persist.Entity a) -> PersistConvert (Persist.Entity a)
-mkPersistConvertEntity a = do
-    let def = Persist.entityDef . fmap Persist.entityVal . toProxy $ a
-        colNum = Persist.entityColumnCount def
-    xs <- State.get
-    (vals, rest) <- maybe (lift . Left . ConvertError $ "not enough input values") return (splitAtExactMay colNum xs)
-    State.put rest
-    lift . mapLeft ConvertError $ Persist.parseEntityValues def vals
-
-mkPersistConvertInternal :: (Persist.PersistField t) => (t -> a) -> PersistConvert a
-mkPersistConvertInternal f = do
-    xs <- State.get
-    (val, rest) <- maybe (lift . Left . ConvertError $ "not enough input values") return (uncons xs)
-    State.put rest
-    r <- lift . mapLeft ConvertError . Persist.fromPersistValue $ val
-    return (f r)
-
-renderFrom :: ExprPrinterType g -> From g a -> Clause
+renderFrom :: ExprPrinterType g -> From t g a -> Clause
 renderFrom p = Clause . return . renderFrom' p
 
-renderFrom' :: ExprPrinterType g -> From g a -> StatementBuilder
+renderFrom' :: ExprPrinterType g -> From t g a -> StatementBuilder
 renderFrom' _ (FromEntity eid ref) =
     let tableName = Persist.unDBName . Persist.entityDB . Persist.entityDef . fmap Persist.entityVal . toProxy $ ref
         alias = printRelationAlias eid
         a = TLB.fromText tableName <> TLB.fromText " AS " <> alias
     in StatementBuilder (a, mempty)
 
-renderFrom' p (FromSubQuery tid query _) =
+renderFrom' p (FromSubQuery tid query) =
     let alias = printRelationAlias tid
         StatementBuilder (t, ps) = printSelect p query
         a = addBracket t <> TLB.fromText " AS " <> alias
     in StatementBuilder (a, ps)
 
-renderJoin :: ExprPrinterType g -> From g a -> JoinClause
+renderJoin :: ExprPrinterType g -> From t g a -> JoinClause
 renderJoin p a = JoinClause . IntMap.singleton (Syntax.fromId a) $  renderFrom' p a
 
 renderOn :: ExprPrinterType g -> RRef a -> g Bool -> OnClause
@@ -282,12 +231,12 @@ renderSelectorFields :: ExprPrinterType g -> [Syntax.FieldClause g] -> Clause
 renderSelectorFields p = mconcat . map (renderFieldClause p)
 
 renderFieldClause :: ExprPrinterType g -> Syntax.FieldClause g -> Clause
-renderFieldClause _ (Syntax.FieldClause (Star' alias)) = renderFieldWildcard alias
-renderFieldClause p (Syntax.FieldClause (Sel' a alias)) = renderFieldAlias (p Nothing Nothing a) alias
+renderFieldClause _ (Syntax.FieldClause (Syntax.Star' alias)) = renderFieldWildcard alias
+renderFieldClause p (Syntax.FieldClause (Syntax.Sel' a alias)) = renderFieldAlias (p Nothing Nothing a) alias
 
-renderFieldWildcard :: RelationAlias a -> Clause
-renderFieldWildcard (RelationAlias eid)      = renderFieldWildcardInternal eid
-renderFieldWildcard (RelationAliasSub eid _) = renderFieldWildcardInternal eid
+renderFieldWildcard :: Syntax.RelationAlias a -> Clause
+renderFieldWildcard (Syntax.RelationAlias eid)      = renderFieldWildcardInternal eid
+renderFieldWildcard (Syntax.RelationAliasSub eid _ _) = renderFieldWildcardInternal eid
 
 renderFieldWildcardInternal :: Int -> Clause
 renderFieldWildcardInternal eid =

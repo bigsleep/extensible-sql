@@ -14,7 +14,6 @@ module ExSql.Syntax.Internal.Types
     ) where
 
 import Control.Monad.Trans.State.Strict (StateT)
-import qualified Data.Extensible.HList as HList (HList(..))
 import Data.Text (Text)
 import qualified Database.Persist as Persist (PersistField, PersistValue)
 
