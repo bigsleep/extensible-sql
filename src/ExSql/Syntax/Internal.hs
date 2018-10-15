@@ -82,10 +82,12 @@ class Hoist t => Selectable (t :: (* -> *) -> k -> *) where
 data RelationAlias a where
     RelationAlias :: (Persist.PersistEntity a) => Int -> RelationAlias (Persist.Entity a)
     RelationAliasSub :: Int -> (Int -> Int) -> PersistConvert a -> RelationAlias a
+    RelationAliasNullable :: RelationAlias a -> RelationAlias (Maybe a)
 
 relationAliasId :: RelationAlias a -> Int
-relationAliasId (RelationAlias i)        = i
-relationAliasId (RelationAliasSub i _ _) = i
+relationAliasId (RelationAlias i)         = i
+relationAliasId (RelationAliasSub i _ _)  = i
+relationAliasId (RelationAliasNullable a) = relationAliasId a
 
 data Sel g a where
     Star :: RelationAlias a -> Sel g a
@@ -188,23 +190,20 @@ hoistFieldClause f (FieldClause a) = FieldClause (hoist f a)
 
 data FieldsSelector g x where
     Raw :: FieldsSelector g [Persist.PersistValue]
-    Nullable :: FieldsSelector g a -> FieldsSelector g (Maybe a)
     (:$:) :: (KnownConstructor (ResultType b), ConstructorType (ResultType b) ~ (a -> b)) => (a -> b) -> g a -> FieldsSelector g b
     (:*:) :: (KnownConstructor (ResultType b)) => FieldsSelector g (a -> b) -> g a -> FieldsSelector g b
 
 infixl 4 :$:, :*:
 
 instance Hoist FieldsSelector where
-    hoist _ Raw          = Raw
-    hoist f (Nullable a) = Nullable (hoist f a)
-    hoist f (g :$: a)    = g :$: f a
-    hoist f (s :*: a)    = hoist f s :*: f a
+    hoist _ Raw       = Raw
+    hoist f (g :$: a) = g :$: f a
+    hoist f (s :*: a) = hoist f s :*: f a
 
 instance HTraversable FieldsSelector where
-    htraverse _ Raw          = pure Raw
-    htraverse f (Nullable a) = Nullable <$> htraverse f a
-    htraverse f (g :$: a)    = (g :$:) <$> f a
-    htraverse f (s :*: a)    = (:*:) <$> htraverse f s <*> f a
+    htraverse _ Raw       = pure Raw
+    htraverse f (g :$: a) = (g :$:) <$> f a
+    htraverse f (s :*: a) = (:*:) <$> htraverse f s <*> f a
 
 pattern Nil :: HList.HList h '[]
 pattern Nil = HList.HNil
@@ -244,25 +243,8 @@ instance Selectable FieldsSelector where
         xs <- State.get
         State.put mempty
         return xs
-    mkPersistConvert (Nullable a) = do
-        xs <- State.get
-        let l = length xs
-            c = countFields l a
-        State.mapStateT (handleNullable xs c) (mkPersistConvert a)
-        where
-        handleNullable _ _ (Right (x, s)) = Right (Just x, s)
-        handleNullable vs c (Left HitNullValue) = do
-            (_, rest) <- maybe (Left . ConvertError $ "not enough input values") return (splitAtExactMay c vs)
-            return (Nothing, rest)
-        handleNullable _ _ (Left (ConvertError e)) = Left (ConvertError e)
-    mkPersistConvert (f :$: Star a @ RelationAlias {}) = f <$> mkPersistConvertEntity a
-    mkPersistConvert (f :$: Star (RelationAliasSub _ _ convert)) = f <$> convert
-    mkPersistConvert (f :$: Sel {}) = f <$> mkPersistConvertField Proxy
-    mkPersistConvert (s :*: Star a @ RelationAlias {}) = mkPersistConvert s <*> mkPersistConvertEntity a
-    mkPersistConvert (s0 :*: Star (RelationAliasSub _ _ convert)) = mkPersistConvert s0 <*> convert
-    mkPersistConvert (s :*: Sel {}) = do
-        f <- mkPersistConvert s
-        f <$> mkPersistConvertField Proxy
+    mkPersistConvert (f :$: a) = f <$> mkPersistConvertSel a
+    mkPersistConvert (s :*: a) = mkPersistConvert s <*> mkPersistConvertSel a
 
     mkRefAndFieldClauses x =
         let (ref, xs) = flip State.runState mempty . htraverse putFieldClause . flip State.evalState 0 . htraverse mkSelWithAlias $ x
@@ -310,9 +292,27 @@ countField _ x @ (Star a @ RelationAlias {}) = do
 countField i x @ (Star (RelationAliasSub _ c _)) = do
     State.modify' (+ c i)
     return x
+countField i x @ (Star (RelationAliasNullable a)) = countField i (Star a) >> return x
 countField _ x @ Sel {} = do
     State.modify' (+ 1)
     return x
+
+mkPersistConvertSel :: Sel g a -> PersistConvert a
+mkPersistConvertSel (Star a @ RelationAlias {}) = mkPersistConvertEntity a
+mkPersistConvertSel (Star (RelationAliasSub _ _ convert)) = convert
+mkPersistConvertSel b @ (Star (RelationAliasNullable a)) = do
+    xs <- State.get
+    let l = length xs
+        c = State.execState (countField l b) 0
+    State.mapStateT (handleNullable xs c) (mkPersistConvertSel (Star a))
+
+    where
+    handleNullable _ _ (Right (x, s)) = Right (Just x, s)
+    handleNullable vs c (Left HitNullValue) = do
+        (_, rest) <- maybe (Left . ConvertError $ "not enough input values") return (splitAtExactMay c vs)
+        return (Nothing, rest)
+    handleNullable _ _ (Left (ConvertError e)) = Left (ConvertError e)
+mkPersistConvertSel Sel {} = mkPersistConvertField Proxy
 
 mkPersistConvertEntity :: (Persist.PersistEntity a) => RelationAlias (Persist.Entity a) -> PersistConvert (Persist.Entity a)
 mkPersistConvertEntity a = do

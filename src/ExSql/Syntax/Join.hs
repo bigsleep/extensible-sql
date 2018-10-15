@@ -72,12 +72,9 @@ instance Selectable t => HandleFromProxy t g 'True a where
         i <- prepareFrom $ return ()
         let from_ = convertFromProxy i proxy
             (sel, sref, alias) = mkSelRefAlias from_
-            alias' = nullableAlias alias
+            alias' = RelationAliasNullable alias
         tellSelectClause . sc $ from_
         return (sel, sref, alias')
-
-        where
-        nullableAlias = undefined
 
 instance Selectable t => HandleFromProxy t g 'False a where
     type HandleFromProxyType t g 'False a = (t (Sel g) a, SelectRefType t a, RelationAlias (SelectResultType t a))

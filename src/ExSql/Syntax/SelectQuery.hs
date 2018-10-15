@@ -279,7 +279,6 @@ count = mkAst . return . Count
 
 qualifySelectorRef :: Int -> FieldsSelector Ref a -> FieldsSelector Ref a
 qualifySelectorRef _ Raw = Raw
-qualifySelectorRef tid (Nullable a) = Nullable $ qualifySelectorRef tid a
 qualifySelectorRef tid (f :$: a) = f :$: qualifyRef tid a
 qualifySelectorRef tid (s :*: a) = qualifySelectorRef tid s :*: qualifyRef tid a
 
