@@ -35,7 +35,9 @@ module ExSql.Syntax.Internal
     , SelectQueryM
     , Selectable(..)
     , ValueList
+    , evalSubQuerySel
     , fromId
+    , getRelationAlias
     , pattern (:<)
     , pattern Nil
     , relationAliasId
@@ -76,8 +78,7 @@ class Hoist t => Selectable (t :: (* -> *) -> k -> *) where
     mkPersistConvert :: t (Sel g) a -> PersistConvert (SelectResultType t a)
     mkRefAndFieldClauses :: t (Sel g) a -> (SelectRefType t a, [FieldClause g])
     countFields :: Int -> t (Sel g) a -> Int
-    mkRelationSel :: From t g a -> t (Sel g) a
-    mkRelationAlias :: From t g a -> RelationAlias (SelectResultType t a)
+    mkRelationSel :: From x t g a -> t (Sel g) a
 
 data RelationAlias a where
     RelationAlias :: (Persist.PersistEntity a) => Int -> RelationAlias (Persist.Entity a)
@@ -117,18 +118,18 @@ newtype SelectQueryInternal (s :: SelectStage) (t :: (* -> *) -> k -> *) (g :: *
     { unSelectQueryInternal :: SelectQueryM g (t (Sel g) a)
     }
 
-data From (t :: (* -> *) -> k -> *) (g :: * -> *) (a :: k) where
-    FromEntity :: Persist.PersistEntity record => Int -> proxy (Persist.Entity record) -> From t g (RelationSelType t (Persist.Entity record))
-    FromSubQuery :: Int -> SelectQuery t g a -> From t g a
+data From x (t :: (* -> *) -> k -> *) (g :: * -> *) (a :: k) where
+    FromEntity :: Persist.PersistEntity record => RelationAlias (Persist.Entity record) -> From (Persist.Entity record) t g (RelationSelType t (Persist.Entity record))
+    FromSubQuery :: (x ~ SelectResultType t a) => RelationAlias x -> SelectQuery t g a -> From x t g a
 
-data FromProxy t g a where
-    FPEntity :: Persist.PersistEntity record => proxy (Persist.Entity record) -> FromProxy t g (RelationSelType t (Persist.Entity record))
-    FPSubQuery :: SelectQuery t g a -> FromProxy t g a
+data FromProxy x (t :: (* -> *) -> k -> *) (g :: * -> *) (a :: k) where
+    FPEntity :: Persist.PersistEntity record => proxy (Persist.Entity record) -> FromProxy (Persist.Entity record) t g (RelationSelType t (Persist.Entity record))
+    FPSubQuery :: (x ~ SelectResultType t a) => SelectQuery t g a -> FromProxy x t g a
 
 data SelectClause (g :: * -> *) where
     Fields :: [FieldClause g] -> SelectClause g
-    From :: From t g a -> SelectClause g
-    Join :: From t g a -> SelectClause g
+    From :: From x t g a -> SelectClause g
+    Join :: From x t g a -> SelectClause g
     On :: RRef a -> g Bool -> SelectClause g
     Where :: g Bool -> SelectClause g
     GroupBy :: AFields g xs -> SelectClause g
@@ -148,13 +149,16 @@ instance Hoist t => Hoist (SelectQueryInternal s t) where
         where
         h = Writer.mapWriter $ \(x, SelectClauses w) -> (x, SelectClauses (fmap (hoistSelectClause f) w))
 
-instance Hoist (From t) where
-    hoist _ (FromEntity i a)   = FromEntity i a
-    hoist f (FromSubQuery i a) = FromSubQuery i (hoist f a)
+instance Hoist (From x t) where
+    hoist _ (FromEntity alias)     = FromEntity alias
+    hoist f (FromSubQuery alias a) = FromSubQuery alias (hoist f a)
 
-fromId :: From t g a -> Int
-fromId (FromEntity i _)   = i
-fromId (FromSubQuery i _) = i
+getRelationAlias :: From x t g a -> RelationAlias x
+getRelationAlias (FromEntity alias)     = alias
+getRelationAlias (FromSubQuery alias _) = alias
+
+fromId :: From x t g a -> Int
+fromId = relationAliasId . getRelationAlias
 
 data OrderType = Asc | Desc deriving (Show, Eq)
 
@@ -249,32 +253,45 @@ instance Selectable FieldsSelector where
     mkRefAndFieldClauses x =
         let (ref, xs) = flip State.runState mempty . htraverse putFieldClause . flip State.evalState 0 . htraverse mkSelWithAlias $ x
         in (ref, DList.toList xs)
-        where
-        putFieldClause a = do
-            let fc = FieldClause a
-            State.modify' (`DList.snoc` fc)
-            return . aliasToRef $ a
-
-        aliasToRef :: SelWithAlias g a -> Ref a
-        aliasToRef (Star' a)               = RelationRef (RRef (relationAliasId a))
-        aliasToRef (Sel' _ (FieldAlias i)) = FieldRef (FRef i)
 
     countFields n =
         flip State.execState 0 . htraverse (countField n)
 
-    mkRelationSel (FromEntity i _)   = id :$: Star (RelationAlias i)
+    mkRelationSel (FromEntity alias) = id :$: Star alias
     mkRelationSel (FromSubQuery _ a) = evalSubQuerySel a
 
-    mkRelationAlias (FromEntity i _) = RelationAlias i
-    mkRelationAlias (FromSubQuery i a) =
-        let sel = evalSubQuerySel a
-            count = flip countFields sel
-            convert = mkPersistConvert sel
-        in RelationAliasSub i count convert
+instance Selectable HList.HList where
+    type SelectResultType HList.HList xs = HList.HList Identity xs
+    type SelectRefType HList.HList xs = HList.HList Ref xs
+    type RelationSelType HList.HList a = '[a]
+
+    mkPersistConvert HList.HNil = return HList.HNil
+    mkPersistConvert (HList.HCons x xs) =
+        HList.HCons <$> fmap return (mkPersistConvertSel x) <*> mkPersistConvert xs
+
+    mkRefAndFieldClauses x =
+        let (ref, xs) = flip State.runState mempty . htraverse putFieldClause . flip State.evalState 0 . htraverse mkSelWithAlias $ x
+        in (ref, DList.toList xs)
+
+    countFields n =
+        flip State.execState 0 . htraverse (countField n)
+
+    mkRelationSel (FromEntity alias) = Star alias `HList.HCons` HList.HNil
+    mkRelationSel (FromSubQuery _ a) = evalSubQuerySel a
 
 evalSubQuerySel :: SelectQuery t g a -> t (Sel g) a
 evalSubQuerySel (SelectQuery a) =
     fst . Writer.runWriter . flip State.evalStateT (0, 0) . unSelectQueryInternal $ a
+
+putFieldClause :: (Monad m) => SelWithAlias g a -> StateT (DList (FieldClause g)) m (Ref a)
+putFieldClause a = do
+    let fc = FieldClause a
+    State.modify' (`DList.snoc` fc)
+    return . aliasToRef $ a
+
+aliasToRef :: SelWithAlias g a -> Ref a
+aliasToRef (Star' a)               = RelationRef (RRef (relationAliasId a))
+aliasToRef (Sel' _ (FieldAlias i)) = FieldRef (FRef i)
 
 mkSelWithAlias :: Sel g a -> State Int (SelWithAlias g a)
 mkSelWithAlias (Star a) = return (Star' a)

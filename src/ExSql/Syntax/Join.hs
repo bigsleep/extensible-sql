@@ -23,15 +23,15 @@ import ExSql.Syntax.Internal
 import ExSql.Syntax.Internal.Types
 import ExSql.Syntax.SelectQuery
 
-newtype JoinProxy (j :: JoinType) t g a =
-    JoinProxy (FromProxy t g a)
+newtype JoinProxy (j :: JoinType) b t g a =
+    JoinProxy (FromProxy b t g a)
 
 data Joins t g (xs :: [*]) where
     JNil :: Joins t g '[]
-    JCons :: JoinProxy j t g a -> Joins t g xs -> Joins t g (JoinProxy j t g a ': xs)
+    JCons :: JoinProxy j b t g a -> Joins t g xs -> Joins t g (JoinProxy j b t g a ': xs)
 
-data FromJoins t g a (xs :: [*]) where
-    FromJoins :: FromProxy t g a -> Joins t g xs -> FromJoins t g a xs
+data FromJoins b t g a (xs :: [*]) where
+    FromJoins :: FromProxy b t g a -> Joins t g xs -> FromJoins b t g a xs
 
 type family HandleNullableType (nullable :: Bool) x :: * where
     HandleNullableType 'True (Maybe x) = Maybe x
@@ -58,31 +58,31 @@ instance RightNullable '[] where
     type RightNullableType '[] = 'False
     rightNullable _ = Proxy
 
-instance (RightNullable xs) => RightNullable (JoinProxy x t g a ': xs) where
-    type RightNullableType (JoinProxy x t g a ': xs) = InList x ['RightJoin, 'FullJoin] || RightNullableType xs
+instance (RightNullable xs) => RightNullable (JoinProxy x b t g a ': xs) where
+    type RightNullableType (JoinProxy x b t g a ': xs) = InList x ['RightJoin, 'FullJoin] || RightNullableType xs
     rightNullable _ = Proxy
 
-class Selectable t => HandleFromProxy (t :: (* -> *) -> k -> *) g (n :: Bool) (a :: k) where
-    type HandleFromProxyType t g n a :: *
-    handleFromProxy :: Proxy n -> FromProxy t g a -> (From t g a -> SelectClause g) -> SelectQueryM g (HandleFromProxyType t g n a)
+class Selectable t => HandleFromProxy (t :: (* -> *) -> k -> *) g (n :: Bool) (a :: k) (b :: *) where
+    type HandleFromProxyType t g n a b :: *
+    handleFromProxy :: Proxy n -> FromProxy b t g a -> (From b t g a -> SelectClause g) -> SelectQueryM g (HandleFromProxyType t g n a b)
 
-instance Selectable t => HandleFromProxy t g 'True a where
-    type HandleFromProxyType t g 'True a = (t (Sel g) a, SelectRefType t a, RelationAlias (Maybe (SelectResultType t a)))
+instance Selectable t => HandleFromProxy t g 'True a b where
+    type HandleFromProxyType t g 'True a b = (t (Sel g) a, SelectRefType t a, RelationAlias (Maybe b))
     handleFromProxy _ proxy sc = do
         i <- prepareFrom $ return ()
         let from_ = convertFromProxy i proxy
-            (sel, sref, alias) = mkSelRefAlias from_
+            (sel, ref, alias) = mkSelRefAlias from_
             alias' = RelationAliasNullable alias
         tellSelectClause . sc $ from_
-        return (sel, sref, alias')
+        return (sel, ref, alias')
 
-instance Selectable t => HandleFromProxy t g 'False a where
-    type HandleFromProxyType t g 'False a = (t (Sel g) a, SelectRefType t a, RelationAlias (SelectResultType t a))
+instance Selectable t => HandleFromProxy t g 'False a b where
+    type HandleFromProxyType t g 'False a b = (t (Sel g) a, SelectRefType t a, RelationAlias b)
     handleFromProxy _ proxy sc = do
         i <- prepareFrom $ return ()
         let from_ = convertFromProxy i proxy
         tellSelectClause . sc $ from_
-        return . mkSelRefAlias $ from_
+        return (mkSelRefAlias from_)
 
 class HandleJoins (n :: Bool) (xs :: [*]) where
     type NeedConvert n xs :: Bool
@@ -102,11 +102,11 @@ instance HandleJoins n '[] where
 instance
     ( HandleJoins (n || InList x ['LeftJoin, 'FullJoin]) xs
     , RightNullable xs
-    , HandleFromProxy t g ((n || x == 'FullJoin || RightNullableType xs) && IsNotMaybe a) a
-    ) => HandleJoins n (JoinProxy x t g a ': xs) where
-    type NeedConvert n (JoinProxy x t g a ': xs) = (n || x == 'FullJoin || RightNullableType xs) && IsNotMaybe a
-    type HandleJoinsType n (JoinProxy x t g a ': xs) = HandleFromProxyType t g ((n || x == 'FullJoin || RightNullableType xs) && IsNotMaybe a) a ': HandleJoinsType (n || InList x ['LeftJoin, 'FullJoin]) xs
-    type LeftNullableType n (JoinProxy x t g a ': xs) = n || InList x ['LeftJoin, 'FullJoin]
+    , HandleFromProxy t g ((n || x == 'FullJoin || RightNullableType xs) && IsNotMaybe a) a b
+    ) => HandleJoins n (JoinProxy x b t g a ': xs) where
+    type NeedConvert n (JoinProxy x b t g a ': xs) = (n || x == 'FullJoin || RightNullableType xs) && IsNotMaybe a
+    type HandleJoinsType n (JoinProxy x b t g a ': xs) = HandleFromProxyType t g ((n || x == 'FullJoin || RightNullableType xs) && IsNotMaybe a) a b ': HandleJoinsType (n || InList x ['LeftJoin, 'FullJoin]) xs
+    type LeftNullableType n (JoinProxy x b t g a ': xs) = n || InList x ['LeftJoin, 'FullJoin]
     needConvert _ _ = Proxy
     handleJoins n js @ (JCons (JoinProxy p) xs) = do
         let n' = needConvert n js
@@ -114,7 +114,7 @@ instance
         xs <- handleJoins (leftNullable n js) xs
         return (HList.HCons (return a) xs)
 
-handleFromJoins :: (RightNullable xs, HandleFromProxy t g (RightNullableType xs) a, HandleJoins 'False xs) => FromJoins t g a xs -> SelectQueryM g (HList.HList Identity (HandleFromProxyType t g ('False || RightNullableType xs) a ': HandleJoinsType 'False xs))
+handleFromJoins :: (RightNullable xs, HandleFromProxy t g (RightNullableType xs) a b, HandleJoins 'False xs) => FromJoins b t g a xs -> SelectQueryM g (HList.HList Identity (HandleFromProxyType t g ('False || RightNullableType xs) a b ': HandleJoinsType 'False xs))
 handleFromJoins (FromJoins p js) = do
     a <- handleFromProxy (rightNullable js) p From
     xs <- handleJoins (Proxy :: Proxy 'False) js

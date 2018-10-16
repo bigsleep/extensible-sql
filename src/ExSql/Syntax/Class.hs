@@ -38,6 +38,9 @@ class HTraversable (t :: (* -> *) -> k -> *) where
 instance Hoist HList where
     hoist f = runIdentity . HList.htraverse (return . f)
 
+instance HTraversable HList where
+    htraverse = HList.htraverse
+
 data Node m g a (f :: (* -> *) -> * -> *) where
     Node :: (Hoist f) => m (f g a) -> Node m g a f
 

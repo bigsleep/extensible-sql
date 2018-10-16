@@ -108,8 +108,9 @@ selectInternal :: (SelectQueryInternal s0 FieldsSelector g [PersistValue] -> Sel
 selectInternal f = f . SelectQueryInternal . return $ Raw
 
 from
-    :: FromProxy FieldsSelector g b
-    -> (FieldsSelector Ref b -> RRef b -> RelationAlias b -> SelectQueryInternal 'Neutral FieldsSelector g b -> SelectQueryInternal s1 t1 g a)
+    :: (Selectable t)
+    => FromProxy c t g b
+    -> (SelectRefType t b -> RRef b -> RelationAlias c -> SelectQueryInternal 'Neutral t g b -> SelectQueryInternal s1 t1 g a)
     -> SelectQueryInternal 'Neutral t0 g x
     -> SelectQueryInternal s1 t1 g a
 from proxy f (SelectQueryInternal pre) = SelectQueryInternal $ do
@@ -125,20 +126,23 @@ fromEntity
     => (RRef (Entity record) -> RelationAlias (Entity record) -> SelectQueryInternal 'Neutral FieldsSelector g (Entity record) -> SelectQueryInternal s1 t1 g a)
     -> SelectQueryInternal 'Neutral t0 g x
     -> SelectQueryInternal s1 t1 g a
-fromEntity f = from (FPEntity Proxy) (const f)
+fromEntity f =
+    from (FPEntity Proxy) (const f)
 
 fromSub
     :: SelectQuery FieldsSelector g b
     -> (FieldsSelector Ref b -> RelationAlias b -> SelectQueryInternal 'Neutral FieldsSelector g b -> SelectQueryInternal s1 t1 g a)
     -> SelectQueryInternal 'Neutral t0 g x
     -> SelectQueryInternal s1 t1 g a
-fromSub q f = from (FPSubQuery q) g
+fromSub q f =
+    from (FPSubQuery q) g
     where
     g a r = f (qualifySelectorRef (rrefId r) a)
 
 join
-    :: FromProxy FieldsSelector g b
-    -> (FieldsSelector Ref b -> RRef b -> RelationAlias b -> SelectQueryInternal 'Neutral FieldsSelector g b -> SelectQueryInternal s1 t1 g a)
+    :: (Selectable t)
+    => FromProxy c t g b
+    -> (SelectRefType t b -> RRef b -> RelationAlias c -> SelectQueryInternal 'Neutral t g b -> SelectQueryInternal s1 t1 g a)
     -> SelectQueryInternal 'Neutral t0 g x
     -> SelectQueryInternal s1 t1 g a
 join proxy f (SelectQueryInternal pre) = SelectQueryInternal $ do
@@ -290,7 +294,7 @@ qualifyRef tid (FieldRef (QRef _ fid)) = FieldRef (QRef tid fid)
 afieldsToARefs :: AFields g xs -> ARefs g xs
 afieldsToARefs = runIdentity . HList.htraverse f
     where
-    f a = Identity (ARef a)
+    f = Identity . ARef
 
 prepareFrom :: SelectQueryM g b -> SelectQueryM g Int
 prepareFrom pre = do
@@ -302,14 +306,16 @@ prepareFrom pre = do
 tellSelectClause :: SelectClause g -> SelectQueryM g ()
 tellSelectClause = lift . Writer.tell . SelectClauses . return
 
-convertFromProxy :: Int -> FromProxy t g a -> From t g a
-convertFromProxy i (FPEntity a)   = FromEntity i a
+convertFromProxy :: (Selectable t) => Int -> FromProxy x t g a -> From x t g a
+convertFromProxy i (FPEntity _)   = FromEntity (RelationAlias i)
 convertFromProxy i (FPSubQuery a) =
-    FromSubQuery i a
+    let sel = evalSubQuerySel a
+        alias = RelationAliasSub i (`countFields` sel) (mkPersistConvert sel)
+    in FromSubQuery alias a
 
-mkSelRefAlias:: (Selectable t) => From t g a -> (t (Sel g) a, SelectRefType t a, RelationAlias (SelectResultType t a))
+mkSelRefAlias :: (Selectable t) => From x t g a -> (t (Sel g) a, SelectRefType t a, RelationAlias x)
 mkSelRefAlias a =
     let sel = mkRelationSel a
         (ref, _) = mkRefAndFieldClauses sel
-        alias = mkRelationAlias a
+        alias = getRelationAlias a
     in (sel, ref, alias)

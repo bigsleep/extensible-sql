@@ -205,23 +205,25 @@ renderSelectClause _ Syntax.Initial = mempty
 toProxy :: f a -> Proxy a
 toProxy _ = Proxy
 
-renderFrom :: ExprPrinterType g -> From t g a -> Clause
+renderFrom :: ExprPrinterType g -> From b t g a -> Clause
 renderFrom p = Clause . return . renderFrom' p
 
-renderFrom' :: ExprPrinterType g -> From t g a -> StatementBuilder
-renderFrom' _ (FromEntity eid ref) =
-    let tableName = Persist.unDBName . Persist.entityDB . Persist.entityDef . fmap Persist.entityVal . toProxy $ ref
+renderFrom' :: ExprPrinterType g -> From b t g a -> StatementBuilder
+renderFrom' _ (FromEntity a) =
+    let eid = Syntax.relationAliasId a
+        tableName = Persist.unDBName . Persist.entityDB . Persist.entityDef . fmap Persist.entityVal . toProxy $ a
         alias = printRelationAlias eid
-        a = TLB.fromText tableName <> TLB.fromText " AS " <> alias
-    in StatementBuilder (a, mempty)
+        b = TLB.fromText tableName <> TLB.fromText " AS " <> alias
+    in StatementBuilder (b, mempty)
 
-renderFrom' p (FromSubQuery tid query) =
-    let alias = printRelationAlias tid
+renderFrom' p (FromSubQuery a query) =
+    let tid = Syntax.relationAliasId a
+        alias = printRelationAlias tid
         StatementBuilder (t, ps) = printSelect p query
-        a = addBracket t <> TLB.fromText " AS " <> alias
-    in StatementBuilder (a, ps)
+        b = addBracket t <> TLB.fromText " AS " <> alias
+    in StatementBuilder (b, ps)
 
-renderJoin :: ExprPrinterType g -> From t g a -> JoinClause
+renderJoin :: ExprPrinterType g -> From b t g a -> JoinClause
 renderJoin p a = JoinClause . IntMap.singleton (Syntax.fromId a) $  renderFrom' p a
 
 renderOn :: ExprPrinterType g -> RRef a -> g Bool -> OnClause
@@ -235,8 +237,7 @@ renderFieldClause _ (Syntax.FieldClause (Syntax.Star' alias)) = renderFieldWildc
 renderFieldClause p (Syntax.FieldClause (Syntax.Sel' a alias)) = renderFieldAlias (p Nothing Nothing a) alias
 
 renderFieldWildcard :: Syntax.RelationAlias a -> Clause
-renderFieldWildcard (Syntax.RelationAlias eid)      = renderFieldWildcardInternal eid
-renderFieldWildcard (Syntax.RelationAliasSub eid _ _) = renderFieldWildcardInternal eid
+renderFieldWildcard = renderFieldWildcardInternal . Syntax.relationAliasId
 
 renderFieldWildcardInternal :: Int -> Clause
 renderFieldWildcardInternal eid =
